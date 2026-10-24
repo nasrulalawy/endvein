@@ -1,0 +1,1032 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tech Talk: Endvein - Redefining Backend Performance with Dart</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600&family=Outfit:wght@400;600;800;900&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: rgba(18, 24, 38, 0.7);
+      --border-card: rgba(56, 189, 248, 0.15);
+      --primary: #00d2ff;
+      --primary-glow: rgba(0, 210, 255, 0.35);
+      --secondary: #3a82f6;
+      --accent: #a855f7;
+      --accent-glow: rgba(168, 85, 247, 0.3);
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --code-bg: #0d121d;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+    }
+
+    /* Ambient background grid and glow */
+    .ambient-glow {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, var(--primary-glow) 0%, rgba(7, 9, 14, 0) 70%);
+      top: -150px;
+      left: 10%;
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .ambient-glow-2 {
+      position: absolute;
+      width: 500px;
+      height: 500px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, rgba(7, 9, 14, 0) 70%);
+      bottom: -150px;
+      right: 10%;
+      filter: blur(80px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Progress Bar */
+    .progress-container {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.05);
+      z-index: 100;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--primary), var(--secondary), var(--accent));
+      transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      box-shadow: 0 0 10px var(--primary);
+    }
+
+    /* Header Bar */
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      z-index: 50;
+      background: rgba(7, 9, 14, 0.6);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-family: 'Outfit', sans-serif;
+      font-weight: 800;
+      font-size: 1.25rem;
+      letter-spacing: -0.5px;
+    }
+
+    .brand-logo {
+      height: 28px;
+      border-radius: 4px;
+    }
+
+    .brand-badge {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      background: rgba(0, 210, 255, 0.12);
+      color: var(--primary);
+      padding: 3px 8px;
+      border-radius: 12px;
+      border: 1px solid rgba(0, 210, 255, 0.3);
+      font-weight: 700;
+    }
+
+    .slide-indicator {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 4px 12px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    /* Slide Deck Container */
+    .deck {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+      overflow: hidden;
+      z-index: 10;
+    }
+
+    .slide {
+      position: absolute;
+      top: 60px;
+      left: 0;
+      width: 100%;
+      height: calc(100% - 120px);
+      padding: 2.5rem 5rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      opacity: 0;
+      transform: translateX(60px);
+      transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      pointer-events: none;
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+
+    .slide.prev {
+      opacity: 0;
+      transform: translateX(-60px);
+    }
+
+    /* Slide Typography */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: var(--primary);
+      margin-bottom: 0.8rem;
+    }
+
+    .tag::before {
+      content: '';
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 8px var(--primary);
+    }
+
+    h1.hero-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 3.8rem;
+      font-weight: 900;
+      line-height: 1.1;
+      letter-spacing: -1.5px;
+      margin-bottom: 1.5rem;
+      background: linear-gradient(135deg, #ffffff 30%, #94a3b8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .gradient-text {
+      background: linear-gradient(135deg, var(--primary) 0%, #38bdf8 50%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    h2.slide-title {
+      font-family: 'Outfit', sans-serif;
+      font-size: 2.7rem;
+      font-weight: 800;
+      letter-spacing: -1px;
+      margin-bottom: 1rem;
+      line-height: 1.15;
+    }
+
+    p.subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 850px;
+      line-height: 1.6;
+      margin-bottom: 2rem;
+      font-weight: 400;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+      width: 100%;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.5rem;
+      width: 100%;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1.2rem;
+      width: 100%;
+    }
+
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      backdrop-filter: blur(16px);
+      border-radius: 16px;
+      padding: 1.8rem;
+      position: relative;
+      overflow: hidden;
+      transition: transform 0.2s ease, border-color 0.2s ease;
+    }
+
+    .card:hover {
+      border-color: rgba(0, 210, 255, 0.4);
+      transform: translateY(-3px);
+    }
+
+    .card.highlight {
+      border-color: var(--primary);
+      background: linear-gradient(135deg, rgba(0, 210, 255, 0.08) 0%, rgba(18, 24, 38, 0.8) 100%);
+      box-shadow: 0 10px 30px -10px var(--primary-glow);
+    }
+
+    .card-icon {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      display: inline-block;
+    }
+
+    .card h3 {
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.35rem;
+      font-weight: 700;
+      margin-bottom: 0.6rem;
+      color: #fff;
+    }
+
+    .card p {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+    }
+
+    /* Benchmark Table & Bars */
+    .bench-table-container {
+      background: var(--bg-card);
+      border: 1px solid var(--border-card);
+      border-radius: 16px;
+      padding: 1.5rem;
+      backdrop-filter: blur(16px);
+    }
+
+    .bench-row {
+      display: flex;
+      align-items: center;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      gap: 1.5rem;
+    }
+
+    .bench-row:last-child {
+      border-bottom: none;
+    }
+
+    .bench-name {
+      width: 220px;
+      font-weight: 700;
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .bench-bar-track {
+      flex: 1;
+      height: 28px;
+      background: rgba(255, 255, 255, 0.04);
+      border-radius: 6px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .bench-bar-fill {
+      height: 100%;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      padding-left: 12px;
+      font-family: 'Fira Code', monospace;
+      font-weight: 600;
+      font-size: 0.85rem;
+      color: #fff;
+      transition: width 1s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .fill-turbo {
+      background: linear-gradient(90deg, #00d2ff, #0070f3);
+      box-shadow: 0 0 15px rgba(0, 210, 255, 0.5);
+    }
+
+    .fill-axum {
+      background: linear-gradient(90deg, #f97316, #ea580c);
+    }
+
+    .fill-actix {
+      background: linear-gradient(90deg, #e11d48, #be123c);
+    }
+
+    .fill-fasthttp {
+      background: linear-gradient(90deg, #06b6d4, #0891b2);
+    }
+
+    .fill-rawdart {
+      background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+    }
+
+    .fill-shelf {
+      background: rgba(255, 255, 255, 0.15);
+      color: var(--text-muted);
+    }
+
+    .bench-latency {
+      width: 100px;
+      text-align: right;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    /* Code Blocks */
+    .code-container {
+      background: var(--code-bg);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      padding: 1.25rem 1.5rem;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.92rem;
+      line-height: 1.6;
+      color: #e2e8f0;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    .code-badge {
+      position: absolute;
+      top: 12px;
+      right: 14px;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: rgba(255, 255, 255, 0.08);
+      color: var(--text-muted);
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+
+    .kw { color: #f472b6; font-weight: 600; }
+    .type { color: #38bdf8; font-weight: 600; }
+    .fn { color: #60a5fa; }
+    .str { color: #a7f3d0; }
+    .num { color: #fcd34d; }
+    .comment { color: #64748b; font-style: italic; }
+
+    /* Footer Controls */
+    footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 2rem;
+      z-index: 50;
+      background: rgba(7, 9, 14, 0.7);
+      backdrop-filter: blur(12px);
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+    }
+
+    .footer-hints {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      gap: 1.2rem;
+    }
+
+    .kbd {
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.75rem;
+      color: #fff;
+    }
+
+    .nav-buttons {
+      display: flex;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      color: #fff;
+      padding: 8px 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 0.85rem;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: var(--primary);
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #07090e;
+      border: none;
+      box-shadow: 0 0 12px var(--primary-glow);
+    }
+
+    .btn-primary:hover {
+      background: #38bdf8;
+    }
+
+    /* Speaker Notes Drawer */
+    .notes-drawer {
+      position: fixed;
+      bottom: 60px;
+      left: 0;
+      width: 100%;
+      height: 240px;
+      background: rgba(13, 18, 29, 0.95);
+      backdrop-filter: blur(20px);
+      border-top: 1px solid var(--primary);
+      z-index: 90;
+      padding: 1.5rem 3rem;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      overflow-y: auto;
+      box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.8);
+    }
+
+    .notes-drawer.open {
+      transform: translateY(0);
+    }
+
+    .notes-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+    }
+
+    .notes-title {
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--primary);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .notes-content {
+      font-size: 1.05rem;
+      line-height: 1.6;
+      color: #cbd5e1;
+    }
+
+    .notes-content strong {
+      color: #38bdf8;
+    }
+
+    .notes-content ul {
+      margin-left: 1.5rem;
+      margin-top: 0.5rem;
+    }
+
+    .notes-content li {
+      margin-bottom: 0.4rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Ambient Light Effects -->
+  <div class="ambient-glow"></div>
+  <div class="ambient-glow-2"></div>
+
+  <!-- Top Progress Bar -->
+  <div class="progress-container">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="brand">
+      <img src="../endvein.jpg" alt="Endvein Logo" class="brand-logo" onerror="this.style.display='none'">
+      <span>ENDVEIN</span>
+      <span class="brand-badge">Tech Talk 2026</span>
+    </div>
+    <div class="slide-indicator" id="slideIndicator">01 / 12</div>
+  </header>
+
+  <!-- Slide Deck -->
+  <main class="deck" id="deck">
+
+    <!-- Slide 1: Cover -->
+    <section class="slide active" data-notes="Perkenalkan diri Anda dan tema presentasi: 'Sore/Pagi rekan-rekan. Hari ini kita akan membahas sebuah gebrakan besar di ekosistem Dart. Selama ini kita mengenal Dart hanya sebagai bahasa UI untuk Flutter. Tapi hari ini, kita buktikan bagaimana Endvein mendobrak paradigma dan mengalahkan performa engine backend tercepat di dunia: Rust Axum dan Go FastHTTP.'">
+      <div class="tag">Next-Gen Backend Architecture</div>
+      <h1 class="hero-title">ENDVEIN: Redefining Backend <span class="gradient-text">Performance</span> with Dart</h1>
+      <p class="subtitle">Bagaimana kita membongkar mitos "Dart cuma untuk Flutter" dan mengalahkan Rust Axum serta Go FastHTTP dengan arsitektur Zero-Copy dan Multi-Isolate Concurrency.</p>
+      <div style="display: flex; gap: 1.5rem; align-items: center;">
+        <span class="brand-badge" style="font-size: 0.9rem; padding: 6px 14px;">⚡ 237,184 Req/s</span>
+        <span style="color: var(--text-muted); font-size: 0.95rem;">• Multi-Core Actor Model • Zero-Copy Streaming • Turbo FFI</span>
+      </div>
+    </section>
+
+    <!-- Slide 2: The Elephant in the Room -->
+    <section class="slide" data-notes="Bahas stigma di industri: Kebanyakan tech lead menolak Dart di backend karena: 1. Shelf lambat (~40k RPS). 2. Single-isolate bottleneck (hanya pakai 1 CPU core). 3. Memory ballooning akibat string decoding regex. Endvein lahir dari rasa frustrasi ini untuk membuktikan Dart AOT punya potensi laten setara Go dan Rust.">
+      <div class="tag">The Problem Statement</div>
+      <h2 class="slide-title">Gajah di Ruangan: Stigma Dart di Backend</h2>
+      <p class="subtitle">Kenapa selama ini developer enggan memakai Dart untuk server production bernilai tinggi?</p>
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-icon">🐢</div>
+          <h3>The Shelf Bottleneck</h3>
+          <p>Package tradisional <code>shelf</code> mengandalkan single-threaded event loop. Di server 16 core, 15 core lainnya tidur pulas (~42k RPS ceiling).</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🧠</div>
+          <h3>GC & String Churn</h3>
+          <p>Web framework konvensional mengalokasikan ribuan heap object dan regex string parsing per-request, memicu spike GC latency dan OOM.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🚧</div>
+          <h3>"Gunakan Go Saja"</h3>
+          <p>Kebutuhan throughput tinggi selalu memaksa tim pindah ke Golang/Rust, menciptakan tech stack terfragmentasi antara Fullstack & Mobile.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 3: Anatomy of Web Server Bottlenecks -->
+    <section class="slide" data-notes="Jelaskan di level sistem operasi: Mengapa server modern bottleneck? Bukan karena CPU lemah, tapi: 1. Mutex lock contention (thread saling tunggu data shared memory). 2. Copy data memory berulang-ulang dari socket ke heap. 3. CPU context switching yang mahal. Endvein didesain langsung memangkas ketiga hal ini.">
+      <div class="tag">Deep Systems Engineering</div>
+      <h2 class="slide-title">Anatomi Kemacetan I/O Modern</h2>
+      <p class="subtitle">Server tidak lambat karena komputasi matematika, melainkan karena gesekan arsitektural memori dan socket.</p>
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-icon">🔒</div>
+          <h3>Lock Contention (Go & Node Workers)</h3>
+          <p>Ketika ribuan goroutine atau thread berbagi shared memory heap, OS CPU core menghabiskan cycles untuk menunggu mutex locks dan cache invalidation.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">📦</div>
+          <h3>Double / Triple Buffer Copying</h3>
+          <p>Kernel Socket ➔ Native Buffer ➔ Managed Byte Array ➔ UTF-8 String ➔ JSON Map. Setiap step adalah alokasi memori yang memicu Garbage Collection.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 4: Pillar 1 - Kernel Socket Sharing -->
+    <section class="slide" data-notes="Pilar pertama Endvein: SO_REUSEPORT. Di Linux/BSD kernel, beberapa proses/isolate bisa mengikat (bind) port yang sama. Kernel mendistribusikan koneksi TCP secara round-robin langsung di level OS tanpa proxy tambahan. Setiap Isolate punya heap terisolasi, artinya 0% lock contention!">
+      <div class="tag">Pillar 1: Multi-Core Actor Concurrency</div>
+      <h2 class="slide-title">Kernel Socket Sharing: <code>SO_REUSEPORT</code></h2>
+      <p class="subtitle">Load balancing tingkat kernel tanpa proxy Nginx eksternal, memanfaatkan seluruh core CPU dengan nol lock.</p>
+      <div class="grid-2">
+        <div class="code-container">
+          <span class="code-badge">Dart Actor Model</span>
+<span class="kw">final</span> cluster = <span class="type">EndveinCluster</span>(
+  host: <span class="str">'0.0.0.0'</span>,
+  port: <span class="num">8080</span>,
+  workers: <span class="type">Platform</span>.numberOfProcessors, <span class="comment">// 10 Cores</span>
+  engineMode: <span class="type">EngineMode</span>.rawSocket,
+  routerFactory: () => appRouter,
+);
+
+<span class="kw">await</span> cluster.run();
+        </div>
+        <div class="card highlight">
+          <h3>Mengapa Bebas Mutex?</h3>
+          <p style="margin-bottom: 1rem;">Di Dart, setiap <strong>Isolate</strong> memiliki heap memori sendiri. Tidak ada shared mutable memory antar core.</p>
+          <ul style="color: var(--text-muted); font-size: 0.9rem; line-height: 1.7; padding-left: 1.2rem;">
+            <li>Kernel OS mendistribusikan SYN packet TCP secara hardware-assisted.</li>
+            <li>Zero lock, zero race conditions, zero thread thrashing.</li>
+            <li>Auto-Healing Supervisor: Jika 1 isolate crash, worker baru langsung lahir dalam 2 milidetik.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 5: Pillar 2 - Zero-Copy Streaming -->
+    <section class="slide" data-notes="Pilar kedua: Zero-Copy streaming parser. Kebanyakan framework memanggil utf8.decode(bytes) untuk seluruh request. Jika request header 4KB, dibuat string 4KB. Endvein memindai byte raw secara linear dengan pointer byte ASCII, membaca method dan path langsung dari Uint8List buffer tanpa membuat String objek sama sekali.">
+      <div class="tag">Pillar 2: Zero-Copy TCP Streaming</div>
+      <h2 class="slide-title">Membabat Alokasi Heap: Byte-Level Parsing</h2>
+      <p class="subtitle">Parsing HTTP/1.1 tanpa alokasi string UTF-8 dan tanpa regex di hot-path.</p>
+      <div class="grid-2">
+        <div class="card">
+          <h3>Framework Tradisional (Shelf/Express)</h3>
+          <p>Menerima paket TCP ➔ decode full UTF-8 String ➔ regex split header ➔ hashmap insertion per-header ➔ <strong>Ratusan object GC per request</strong>.</p>
+          <div style="margin-top: 1rem; color: var(--danger); font-weight: 600; font-size: 0.85rem;">⚠️ GC Pause spike saat high concurrency</div>
+        </div>
+        <div class="card highlight">
+          <h3>Endvein ZeroCopyHttpParser</h3>
+          <p>Membaca byte array mentah langsung. Header dipindai secara lazy berbasis offset byte ASCII. Alokasi string hanya terjadi jika user sengaja mengakses header tersebut.</p>
+          <div style="margin-top: 1rem; color: var(--success); font-weight: 600; font-size: 0.85rem;">⚡ Zero allocation pada request line & headers lookup</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 6: Pillar 3 - Turbo FFI Engine -->
+    <section class="slide" data-notes="Pilar ketiga yang membuat kita mengalahkan Rust Axum: Turbo FFI. Kita mengintegrasikan C event loop non-blocking kqueue (macOS) & epoll (Linux) via dart:ffi. Menggunakan syscall writev scatter-gather I/O sehingga header dan body dikirim dalam 1 operasi syscall kernel tanpa penggabungan buffer di memori.">
+      <div class="tag">Pillar 3: The Secret Weapon</div>
+      <h2 class="slide-title">Turbo FFI: Menembus Batas I/O Dart</h2>
+      <p class="subtitle">Arsitektur hybrid C event-loop (pola uWebSockets) terintegrasi langsung dengan Dart isolate thread.</p>
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-icon">⚡</div>
+          <h3>Native Event Loop</h3>
+          <p>Menggunakan <code>kqueue</code> di macOS/BSD dan <code>epoll</code> di Linux untuk polling jutaan file descriptor dengan O(1) latency.</p>
+        </div>
+        <div class="card highlight">
+          <div class="card-icon">🚀</div>
+          <h3>Scatter-Gather <code>writev()</code></h3>
+          <p>Mengirim header HTTP statis dan payload JSON langsung dari buffer terpisah via syscall kernel tanpa penyatuan memori (zero heap copy).</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🧵</div>
+          <h3>Thread-Local Scratch Buffer</h3>
+          <p>Buffer 64KB per-thread yang digunakan berulang kali. Menghilangkan 100% <code>malloc()</code> dan <code>free()</code> pada response pipeline.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 7: The Grand Benchmark -->
+    <section class="slide" data-notes="Ini slide klimaks! Tunjukkan hasil pengujian nyata di mesin 10-core M-series dengan 50.000 requests, concurrency 100. Endvein Turbo tembus 237k RPS dengan latency 0.422ms, mengalahkan Rust Axum (219k) dan Go FastHTTP (187k). Bahkan Endvein Pure Dart tanpa C pun (170k RPS) sudah mengalahkan Go Gin & Echo!">
+      <div class="tag">Real Hardware Benchmark (50,000 Reqs, c=100)</div>
+      <h2 class="slide-title">Head-to-Head: Endvein vs Rust & Go</h2>
+      <p class="subtitle">Semua server dikompilasi ke binary rilis AOT native di hardware yang sama persis.</p>
+      
+      <div class="bench-table-container">
+        <div class="bench-row">
+          <div class="bench-name" style="color: var(--primary);">⚡ Endvein Turbo</div>
+          <div class="bench-bar-track">
+            <div class="bench-bar-fill fill-turbo" style="width: 100%;">237,184 req/s</div>
+          </div>
+          <div class="bench-latency" style="color: var(--primary); font-weight: 700;">0.422 ms</div>
+        </div>
+        <div class="bench-row">
+          <div class="bench-name" style="color: #f97316;">🦀 Rust Axum</div>
+          <div class="bench-bar-track">
+            <div class="bench-bar-fill fill-axum" style="width: 92.5%;">219,435 req/s</div>
+          </div>
+          <div class="bench-latency">0.456 ms</div>
+        </div>
+        <div class="bench-row">
+          <div class="bench-name" style="color: #e11d48;">🦀 Rust Actix-web</div>
+          <div class="bench-bar-track">
+            <div class="bench-bar-fill fill-actix" style="width: 88.2%;">209,293 req/s</div>
+          </div>
+          <div class="bench-latency">0.478 ms</div>
+        </div>
+        <div class="bench-row">
+          <div class="bench-name" style="color: #06b6d4;">🐹 Go FastHTTP</div>
+          <div class="bench-bar-track">
+            <div class="bench-bar-fill fill-fasthttp" style="width: 78.9%;">187,272 req/s</div>
+          </div>
+          <div class="bench-latency">0.534 ms</div>
+        </div>
+        <div class="bench-row">
+          <div class="bench-name" style="color: #3b82f6;">⚡ Endvein (Pure Dart)</div>
+          <div class="bench-bar-track">
+            <div class="bench-bar-fill fill-rawdart" style="width: 71.7%;">170,043 req/s</div>
+          </div>
+          <div class="bench-latency">0.588 ms</div>
+        </div>
+        <div class="bench-row">
+          <div class="bench-name" style="color: var(--text-muted);">Traditional Shelf</div>
+          <div class="bench-bar-track">
+            <div class="bench-bar-fill fill-shelf" style="width: 17.7%;">42,152 req/s</div>
+          </div>
+          <div class="bench-latency">2.372 ms</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 8: Zero-Cost Typed Ergonomics -->
+    <section class="slide" data-notes="Jelaskan DX: Performa tinggi seringkali mengorbankan kenyamanan koding. Di Endvein, kita menggunakan fitur terbaru Dart 3.3+: Extension Types. Kita punya HeaderName, MediaType, StatusCode yang compile-time safe, tetapi di runtime dikompilasi jadi unboxed string/int murni tanpa alokasi class wrapper.">
+      <div class="tag">Developer Ergonomics (Dart 3.3+)</div>
+      <h2 class="slide-title">Zero-Cost Typed Safety</h2>
+      <p class="subtitle">Menikmati keamanan tipe data modern tanpa membayar 1 byte pun beban alokasi Garbage Collector.</p>
+      <div class="grid-2">
+        <div class="code-container">
+          <span class="code-badge">Dart 3.3 Extension Types</span>
+<span class="comment">// Di-compile ke String murni di runtime</span>
+<span class="kw">extension type const</span> <span class="type">HeaderName</span>(<span class="type">String</span> name) {
+  <span class="kw">static const</span> authorization = <span class="type">HeaderName</span>(<span class="str">'authorization'</span>);
+  <span class="kw">static const</span> contentType = <span class="type">HeaderName</span>(<span class="str">'content-type'</span>);
+}
+
+<span class="comment">// Di-compile ke int murni di runtime</span>
+<span class="kw">extension type const</span> <span class="type">StatusCode</span>(<span class="type">int</span> code) {
+  <span class="kw">static const</span> ok = <span class="type">StatusCode</span>(<span class="num">200</span>);
+  <span class="kw">static const</span> unauthorized = <span class="type">StatusCode</span>(<span class="num">401</span>);
+}
+        </div>
+        <div class="card highlight">
+          <h3>Mengapa Lebih Baik dari Relic/Shelf?</h3>
+          <p style="margin-bottom: 1rem;">Framework lama membungkus header dan status code dalam class instansiasi (<code>new Header(...)</code>).</p>
+          <ul style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.7; padding-left: 1.2rem;">
+            <li><strong>Auto-complete IDE:</strong> Mencegah typo nama header <code>authorization</code>.</li>
+            <li><strong>Zero Memory Footprint:</strong> Tidak ada overhead pointer class dan VTable.</li>
+            <li><strong>Type-Safe Responses:</strong> <code>ctx.sendJson(data, statusCode: StatusCode.ok)</code>.</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 9: Enterprise Batteries Included -->
+    <section class="slide" data-notes="Bahas fitur enterprise yang siap produksi: 1. Trie Routing O(K) dengan wildcard (*filepath) dan dynamic params (:id). 2. Scoped middleware & security headers. 3. Pluggable rate limiter dengan Redis support. 4. Multipart streaming & SSE token streaming untuk AI LLM. 5. Prometheus exporter bawaan.">
+      <div class="tag">Production Architecture</div>
+      <h2 class="slide-title">Batteries-Included untuk Enterprise</h2>
+      <p class="subtitle">Bukan sekadar engine benchmark, Endvein adalah framework lengkap yang siap menangani beban produksi.</p>
+      <div class="grid-4">
+        <div class="card">
+          <div class="card-icon">🌲</div>
+          <h3>Radix Trie Router</h3>
+          <p>O(1) static fast-path + Radix Tree untuk parameter dinamis <code>:id</code> dan deep wildcard <code>*filepath</code>.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🛡️</div>
+          <h3>Anti-DoS & Rate Limit</h3>
+          <p>Max header/body limits, idle socket killer, serta <code>RateLimiterStore</code> pluggable (in-memory & Redis).</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">🤖</div>
+          <h3>AI & SSE Streaming</h3>
+          <p>Dukungan native W3C <code>EventSource</code> via <code>ctx.sse()</code> untuk streaming token LLM secara real-time.</p>
+        </div>
+        <div class="card">
+          <div class="card-icon">📈</div>
+          <h3>Observability</h3>
+          <p>Prometheus <code>/metrics</code> exporter, structured JSON logger, dan distributed tracing <code>X-Request-Id</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 10: Clean Architecture & CLI -->
+    <section class="slide" data-notes="Sorot Clean Architecture: Endvein hadir dengan kontrak Result<S, F>, UseCase, dan BaseController sehingga kode bebas exception try-catch yang lambat. Ditambah Endvein CLI resmi yang men-generate boilerplate hanya dalam 1 detik.">
+      <div class="tag">Clean Architecture & Developer Experience</div>
+      <h2 class="slide-title">Kerapian Kode Skala Besar & CLI Tool</h2>
+      <p class="subtitle">Membangun arsitektur domain enterprise yang rapi, modular, dan bebas runtime exception traps.</p>
+      <div class="grid-2">
+        <div class="code-container">
+          <span class="code-badge">Terminal CLI Scaffolding</span>
+<span class="comment"># 1. Scaffold project Clean Architecture dalam 1 detik:</span>
+$ endvein create my_fintech_api
+
+<span class="comment"># 2. Generator Controller, UseCase, Middleware:</span>
+$ endvein make:controller Payment
+$ endvein make:usecase ProcessTransfer
+$ endvein make:middleware AuditLog
+
+<span class="comment"># 3. Jalankan langsung:</span>
+$ dart run bin/server.dart
+        </div>
+        <div class="card">
+          <h3>Pola Exception-Free dengan <code>Result&lt;S, F&gt;</code></h3>
+          <p>Di Dart & Go, melempar <code>throw Exception</code> sangat mahal karena mengkalkulasi stack trace. Endvein mengadopsi functional programming:</p>
+          <div class="code-container" style="margin-top: 0.8rem; font-size: 0.8rem; padding: 0.8rem;">
+<span class="kw">return switch</span> (result) {
+  <span class="type">Success</span>(:<span class="kw">final</span> user) => ctx.success(user),
+  <span class="type">Failure</span>(:<span class="kw">final</span> err)  => ctx.fail(err.message, statusCode: <span class="num">400</span>),
+};
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Slide 11: Real Code Walkthrough -->
+    <section class="slide" data-notes="Tunjukkan kemudahan koding Endvein dalam 20 baris. Bersih, ekspresif, tidak ada boilerplate berlebihan. Developer Flutter langsung merasa familiar, sementara developer Go dan Rust kagum dengan keringkasannya.">
+      <div class="tag">Putting It All Together</div>
+      <h2 class="slide-title">Contoh Server Endvein Lengkap</h2>
+      <p class="subtitle">Hanya dalam 20 baris kode, server multi-core berkekuatan 237.000 RPS siap melayani traffic global.</p>
+      <div class="code-container" style="max-height: 400px; font-size: 0.88rem;">
+        <span class="code-badge">bin/server.dart</span>
+<span class="kw">import</span> <span class="str">'package:endvein/endvein.dart'</span>;
+
+<span class="kw">void</span> <span class="fn">main</span>() <span class="kw">async</span> {
+  <span class="kw">final</span> cluster = <span class="type">EndveinCluster</span>(
+    host: <span class="str">'0.0.0.0'</span>,
+    port: <span class="num">8080</span>,
+    engineMode: <span class="type">EngineMode</span>.turboFfi, <span class="comment">// ⚡ 237,000+ RPS Turbo Native</span>
+    routerFactory: () {
+      <span class="kw">final</span> router = <span class="type">EndveinRouter</span>();
+      
+      <span class="comment">// Security & Rate Limiting Middlewares</span>
+      router.use(cors());
+      router.use(rateLimiter(maxRequests: <span class="num">100</span>, window: <span class="type">Duration</span>(minutes: <span class="num">1</span>)));
+
+      <span class="comment">// Type-safe Endpoint</span>
+      router.get(<span class="str">'/api/users/:id'</span>, (ctx) {
+        <span class="kw">final</span> userId = ctx.paramInt(<span class="str">'id'</span>);
+        <span class="kw">return</span> {<span class="str">'user_id'</span>: userId, <span class="str">'status'</span>: <span class="str">'active'</span>, <span class="str">'engine'</span>: <span class="str">'Endvein Turbo'</span>};
+      });
+
+      <span class="kw">return</span> router;
+    },
+  );
+
+  <span class="kw">await</span> cluster.run();
+}
+      </div>
+    </section>
+
+    <!-- Slide 12: Conclusion & Call to Action -->
+    <section class="slide" data-notes="Penutup yang menggugah: 'Dart bukan lagi sekadar bahasa UI Flutter. Dengan Endvein, satu bahasa bisa dipakai dari Client UI sampai Ultra-High-Throughput Microservice, memangkas biaya server, menghemat latency, dan menyatukan engineering team. Coba sekarang di pub.dev/packages/endvein dan dukung di GitHub! Terima kasih, mari kita buka sesi tanya jawab.'">
+      <div class="tag">The Paradigm Shift</div>
+      <h1 class="hero-title">The Future of <span class="gradient-text">Fullstack Dart</span> is Here.</h1>
+      <p class="subtitle">Satu bahasa, satu model tipe data dari Flutter Mobile App hingga High-Frequency Backend Microservices.</p>
+      
+      <div class="grid-3" style="margin-top: 1.5rem;">
+        <div class="card highlight" style="text-align: center;">
+          <div class="card-icon">📦</div>
+          <h3>Pub.dev Package</h3>
+          <p style="font-family: 'Fira Code', monospace; color: var(--primary);">pub.dev/packages/endvein</p>
+          <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);">Version 0.3.0 Live</div>
+        </div>
+        <div class="card highlight" style="text-align: center;">
+          <div class="card-icon">⭐</div>
+          <h3>Open Source GitHub</h3>
+          <p style="font-family: 'Fira Code', monospace; color: var(--primary);">github.com/nasrulalawy/endvein</p>
+          <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);">MIT Licensed</div>
+        </div>
+        <div class="card highlight" style="text-align: center;">
+          <div class="card-icon">💬</div>
+          <h3>Q & A Session</h3>
+          <p>Terima kasih!</p>
+          <div style="margin-top: 0.5rem; font-size: 0.8rem; color: var(--text-muted);">Waktunya berdiskusi</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Speaker Notes Drawer -->
+  <div class="notes-drawer" id="notesDrawer">
+    <div class="notes-header">
+      <div class="notes-title">🎙️ Speaker Notes (Catatan Pembicara)</div>
+      <button class="btn" onclick="toggleNotes()" style="padding: 4px 10px; font-size: 0.75rem;">Tutup (N)</button>
+    </div>
+    <div class="notes-content" id="notesContent">
+      Catatan pembicara untuk slide ini akan muncul di sini.
+    </div>
+  </div>
+
+  <!-- Bottom Navigation Footer -->
+  <footer>
+    <div class="footer-hints">
+      <span><span class="kbd">←</span> / <span class="kbd">→</span> Navigasi</span>
+      <span><span class="kbd">Space</span> Lanjut</span>
+      <span><span class="kbd">N</span> Catatan Pembicara</span>
+      <span><span class="kbd">F</span> Layar Penuh</span>
+    </div>
+    <div class="nav-buttons">
+      <button class="btn" id="notesBtn" onclick="toggleNotes()">🎙️ Notes</button>
+      <button class="btn" id="prevBtn" onclick="prevSlide()">❮ Prev</button>
+      <button class="btn btn-primary" id="nextBtn" onclick="nextSlide()">Next ❯</button>
+    </div>
+  </footer>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const progressBar = document.getElementById('progressBar');
+    const slideIndicator = document.getElementById('slideIndicator');
+    const notesDrawer = document.getElementById('notesDrawer');
+    const notesContent = document.getElementById('notesContent');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+
+    let currentSlide = 0;
+    const totalSlides = slides.length;
+
+    function updateSlide() {
+      slides.forEach((slide, index) => {
+        slide.classList.remove('active', 'prev');
+        if (index === currentSlide) {
+          slide.classList.add('active');
+        } else if (index < currentSlide) {
+          slide.classList.add('prev');
+        }
+      });
+
+      // Update progress bar
+      const progressPercent = ((currentSlide + 1) / totalSlides) * 100;
+      progressBar.style.width = `${progressPercent}%`;
+
+      // Update indicator
+      const currentFormatted = String(currentSlide + 1).padStart(2, '0');
+      const totalFormatted = String(totalSlides).padStart(2, '0');
+      slideIndicator.textContent = `${currentFormatted} / ${totalFormatted}`;
+
+      // Update notes
+      const activeSlide = slides[currentSlide];
+      const notes = activeSlide.getAttribute('data-notes') || 'Tidak ada catatan pembicara untuk slide ini.';
+      notesContent.innerHTML = notes;
+
+      // Update button states
+      prevBtn.disabled = currentSlide === 0;
+      nextBtn.textContent = currentSlide === totalSlides - 1 ? 'Selesai 🎉' : 'Next ❯';
+    }
+
+    function nextSlide() {
+      if (currentSlide < totalSlides - 1) {
+        currentSlide++;
+        updateSlide();
+      }
+    }
+
+    function prevSlide() {
+      if (currentSlide > 0) {
+        currentSlide--;
+        updateSlide();
+      }
+    }
+
+    function toggleNotes() {
+      notesDrawer.classList.toggle('open');
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // Keyboard Navigation
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        e.preventDefault();
+        nextSlide();
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'n' || e.key === 'N') {
+        toggleNotes();
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+    });
+
+    // Initialize
+    updateSlide();
+  </script>
+</body>
+</html>

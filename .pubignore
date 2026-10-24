@@ -3,6 +3,7 @@
 benchmark/
 build/
 doc/
+presentation/
 .dart_tool/
 .packages
 pubspec.lock
