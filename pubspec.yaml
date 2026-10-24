@@ -1,0 +1,23 @@
+name: endvein
+description: Next-Generation, Ultra-High-Throughput Dart Backend Framework engineered for Multi-Core Native Concurrency and Production-Scale Clean Architecture.
+version: 0.1.0
+homepage: https://github.com/mnasrulalawy/endvein
+repository: https://github.com/mnasrulalawy/endvein
+issue_tracker: https://github.com/mnasrulalawy/endvein/issues
+
+topics:
+  - backend
+  - server
+  - http
+  - framework
+  - clean-architecture
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  # Zero external dependencies for the core engine to maximize raw performance
+
+dev_dependencies:
+  lints: ^3.0.0
+  test: ^1.24.0

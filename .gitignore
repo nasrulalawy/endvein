@@ -1,0 +1,23 @@
+# Dart & Flutter
+.dart_tool/
+.packages
+pubspec.lock
+build/
+doc/api/
+
+# Compiled native binaries & benchmarks
+benchmark/*_bin
+benchmark/worker_test
+*.exe
+*.o
+*.a
+*.so
+*.dylib
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
