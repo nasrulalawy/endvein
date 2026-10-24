@@ -7,13 +7,16 @@ import 'http_method.dart';
 import 'middleware.dart';
 import 'response.dart';
 
+import 'trie.dart';
+
 typedef RouteHandler = FutureOr<dynamic> Function(EndveinContext ctx);
 
-class _RouteTarget {
+/// Represents a route execution target containing handler and scoped middlewares.
+class RouteTarget {
   final RouteHandler handler;
   final List<EndveinMiddleware> middlewares;
 
-  _RouteTarget(this.handler, [this.middlewares = const []]);
+  RouteTarget(this.handler, [this.middlewares = const []]);
 
   FutureOr<void> execute(
     EndveinContext ctx,
@@ -41,44 +44,15 @@ class _RouteTarget {
   }
 }
 
-class _DynamicRoute {
-  final HttpMethod method;
-  final List<String> segments;
-  final _RouteTarget target;
-
-  _DynamicRoute({
-    required this.method,
-    required this.segments,
-    required this.target,
-  });
-
-  bool matches(List<String> pathSegments, Map<String, String> outParams) {
-    if (segments.length != pathSegments.length) return false;
-
-    for (var i = 0; i < segments.length; i++) {
-      final seg = segments[i];
-      final pathSeg = pathSegments[i];
-
-      if (seg.startsWith(':')) {
-        final paramName = seg.substring(1);
-        outParams[paramName] = pathSeg;
-      } else if (seg != pathSeg) {
-        return false;
-      }
-    }
-    return true;
-  }
-}
-
-/// Ultra-fast HTTP Router supporting static O(1) lookups, dynamic routes, route groups, and scoped middlewares.
+/// Ultra-fast HTTP Router supporting static O(1) lookups, Radix Tree dynamic routes, route groups, and scoped middlewares.
 class EndveinRouter {
   final String _prefix;
   final List<EndveinMiddleware> _groupMiddlewares;
   final EndveinRouter? _parent;
 
   // Root storage structures
-  final Map<String, _RouteTarget> _staticRoutes;
-  final List<_DynamicRoute> _dynamicRoutes;
+  final Map<String, RouteTarget> _staticRoutes;
+  final RadixTreeRouter _radixTree;
   final MiddlewarePipeline _pipeline;
 
   EndveinRouter({String prefix = ''})
@@ -86,7 +60,7 @@ class EndveinRouter {
         _groupMiddlewares = [],
         _parent = null,
         _staticRoutes = {},
-        _dynamicRoutes = [],
+        _radixTree = RadixTreeRouter(),
         _pipeline = MiddlewarePipeline();
 
   EndveinRouter._child(
@@ -94,7 +68,7 @@ class EndveinRouter {
     this._prefix,
     this._groupMiddlewares,
     this._staticRoutes,
-    this._dynamicRoutes,
+    this._radixTree,
     this._pipeline,
   );
 
@@ -124,7 +98,7 @@ class EndveinRouter {
       combinedPrefix,
       combinedMiddlewares,
       _staticRoutes,
-      _dynamicRoutes,
+      _radixTree,
       _pipeline,
     );
 
@@ -146,18 +120,12 @@ class EndveinRouter {
       ..._groupMiddlewares,
       ...?middlewares,
     ];
-    final target = _RouteTarget(handler, allMiddlewares);
+    final target = RouteTarget(handler, allMiddlewares);
 
-    if (cleanPath.contains(':')) {
-      final segments = cleanPath.split('/').where((s) => s.isNotEmpty).toList();
-      _dynamicRoutes.add(_DynamicRoute(
-        method: method,
-        segments: segments,
-        target: target,
-      ));
-    } else {
+    if (!cleanPath.contains(':') && !cleanPath.contains('*')) {
       _staticRoutes['${method.value} $cleanPath'] = target;
     }
+    _radixTree.insert(method, cleanPath, target);
   }
 
   void get(String path, RouteHandler handler, {List<EndveinMiddleware>? middlewares}) =>
@@ -216,17 +184,12 @@ class EndveinRouter {
       return null;
     }
 
-    // 2. Segment-based Dynamic Route Lookup
-    final pathSegments = path.split('/').where((s) => s.isNotEmpty).toList();
-    for (final dynamicRoute in _dynamicRoutes) {
-      if (dynamicRoute.method != method) continue;
-
-      final params = <String, String>{};
-      if (dynamicRoute.matches(pathSegments, params)) {
-        ctx.params.addAll(params);
-        await dynamicRoute.target.execute(ctx, _handleResult);
-        return null;
-      }
+    // 2. High-Performance Radix Tree Lookup (Params :id and Wildcards *filepath)
+    final match = _radixTree.search(method, path);
+    if (match != null) {
+      ctx.params.addAll(match.params);
+      await match.target.execute(ctx, _handleResult);
+      return null;
     }
 
     // 3. Fallback 404

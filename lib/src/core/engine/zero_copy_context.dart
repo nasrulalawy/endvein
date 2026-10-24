@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import '../http/context.dart';
 import '../http/http_method.dart';
 import '../http/response.dart';
+import '../http/sse.dart';
 import 'http_constants.dart';
 import 'raw_request.dart';
 
@@ -179,6 +180,61 @@ class ZeroCopyContext implements EndveinContext {
 
     if (!rawReq.keepAlive) {
       socket.close();
+    }
+  }
+
+  @override
+  Future<void> sse(Future<void> Function(SseSender sender) streamHandler) async {
+    if (_responded) return;
+    _responded = true;
+
+    final headerBuffer = StringBuffer();
+    headerBuffer.write('HTTP/1.1 200 OK\r\n');
+    headerBuffer.write('Server: Endvein\r\n');
+    headerBuffer.write('Content-Type: text/event-stream; charset=utf-8\r\n');
+    headerBuffer.write('Cache-Control: no-cache\r\n');
+    headerBuffer.write('Connection: keep-alive\r\n');
+    headerBuffer.write('X-Accel-Buffering: no\r\n');
+
+    responseHeaders.forEach((key, val) {
+      headerBuffer.write('$key: $val\r\n');
+    });
+    headerBuffer.write('\r\n');
+
+    socket.add(ascii.encode(headerBuffer.toString()));
+
+    final sender = _ZeroCopySseSender(socket);
+    try {
+      await streamHandler(sender);
+    } finally {
+      await sender.close();
+    }
+  }
+}
+
+class _ZeroCopySseSender implements SseSender {
+  final Socket socket;
+  _ZeroCopySseSender(this.socket);
+
+  @override
+  void send(SseEvent event) {
+    try {
+      socket.add(event.toBytes());
+    } catch (_) {}
+  }
+
+  @override
+  void sendData(String data, {String? event, String? id}) {
+    send(SseEvent(data: data, event: event, id: id));
+  }
+
+  @override
+  Future<void> close() async {
+    try {
+      await socket.flush();
+      await socket.close();
+    } catch (_) {
+      socket.destroy();
     }
   }
 }

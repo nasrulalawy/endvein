@@ -7,10 +7,16 @@ export 'src/core/http/context.dart';
 export 'src/core/http/response.dart';
 export 'src/core/http/middleware.dart';
 export 'src/core/http/router.dart';
+export 'src/core/http/trie.dart';
+export 'src/core/http/multipart.dart';
+export 'src/core/http/sse.dart';
 
 // Built-in Middlewares
 export 'src/core/http/middlewares/cors.dart';
 export 'src/core/http/middlewares/security_headers.dart';
+export 'src/core/http/middlewares/rate_limiter.dart';
+export 'src/core/http/middlewares/logger.dart';
+export 'src/core/http/middlewares/prometheus.dart';
 
 // Multi-Core Cluster
 export 'src/core/cluster/cluster.dart';

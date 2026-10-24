@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'http_method.dart';
 import 'response.dart';
+import 'sse.dart';
 
 /// Unified Context interface for Endvein handlers and middlewares.
 abstract interface class EndveinContext {
@@ -29,6 +30,9 @@ abstract interface class EndveinContext {
     int statusCode = HttpStatus.ok,
   });
   void sendResponse(EndveinResponse response);
+
+  /// Start a Server-Sent Events (SSE) stream for real-time and LLM streaming.
+  Future<void> sse(Future<void> Function(SseSender sender) streamHandler);
 }
 
 /// Standard implementation wrapping [HttpRequest] and [HttpResponse].
@@ -166,10 +170,52 @@ class StandardHttpContext implements EndveinContext {
     }
     res.close();
   }
+
+  @override
+  Future<void> sse(Future<void> Function(SseSender sender) streamHandler) async {
+    if (_responded) return;
+    _responded = true;
+
+    final res = req.response;
+    res.headers.set('content-type', 'text/event-stream; charset=utf-8');
+    res.headers.set('cache-control', 'no-cache');
+    res.headers.set('connection', 'keep-alive');
+    _applyHeaders();
+
+    final sender = _StandardHttpSseSender(res);
+    try {
+      await streamHandler(sender);
+    } finally {
+      await sender.close();
+    }
+  }
+}
+
+class _StandardHttpSseSender implements SseSender {
+  final HttpResponse res;
+  _StandardHttpSseSender(this.res);
+
+  @override
+  void send(SseEvent event) {
+    res.add(event.toBytes());
+  }
+
+  @override
+  void sendData(String data, {String? event, String? id}) {
+    send(SseEvent(data: data, event: event, id: id));
+  }
+
+  @override
+  Future<void> close() async {
+    await res.close();
+  }
 }
 
 /// Type-safe parsing extensions on [EndveinContext] for params and query parameters.
 extension ContextParamQueryX on EndveinContext {
+  /// Get route parameter as a String.
+  String? param(String name) => params[name];
+
   /// Get route parameter as an int.
   int? paramInt(String name, {int? defaultValue}) {
     final val = params[name];

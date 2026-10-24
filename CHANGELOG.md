@@ -1,3 +1,13 @@
+## 0.2.0
+
+- **Radix Tree (Trie) Router Engine**: High-performance $O(K)$ routing engine supporting static fast-path lookups, parameterized segments (`:id`), and wildcard catch-all routes (`*filepath`).
+- **Rate Limiting Middleware**: In-memory token bucket / sliding window rate limiter with configurable request quotas, window duration, opportunistic GC, and standard RFC headers (`X-RateLimit-Limit`, `X-RateLimit-Remaining`, `Retry-After`).
+- **Structured JSON & Tracing Logger**: Distributed request tracing middleware with automatic `X-Request-Id` generation, microsecond latency timer, and dual-mode formatting (Colorized CLI & Structured JSON).
+- **Multipart/Form-Data & File Uploads**: Zero-dependency streaming parser for text fields and binary file uploads via `ctx.multipart()`.
+- **Server-Sent Events (SSE) Streaming**: Real-time event streaming and LLM AI token streaming via `ctx.sse()` and `SseSender`.
+- **Prometheus Metrics Exporter**: Industry-standard `/metrics` endpoint and middleware for Prometheus/Grafana tracking request counts and latency histograms.
+- **Enhanced In-Memory Test Harness**: Case-insensitive header matching and binary/text payload testing in `EndveinTestClient`.
+
 ## 0.1.0
 
 - **Zero-Copy Streaming Engine**: Ultra-high-performance custom HTTP/1.1 binary streaming parser directly over raw TCP sockets (`RawHttpServer`, `ZeroCopyHttpParser`, `ZeroCopyContext`).

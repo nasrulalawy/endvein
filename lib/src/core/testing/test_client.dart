@@ -1,3 +1,4 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -5,18 +6,73 @@ import '../http/context.dart';
 import '../http/http_method.dart';
 import '../http/response.dart';
 import '../http/router.dart';
+import '../http/sse.dart';
+
+class _CaseInsensitiveMap extends MapBase<String, String> {
+  final Map<String, String> _inner = {};
+  final Map<String, String> _keys = {};
+
+  _CaseInsensitiveMap([Map<String, String>? initial]) {
+    if (initial != null) {
+      initial.forEach((k, v) => this[k] = v);
+    }
+  }
+
+  @override
+  String? operator [](Object? key) {
+    if (key is! String) return null;
+    final realKey = _keys[key.toLowerCase()];
+    return realKey != null ? _inner[realKey] : null;
+  }
+
+  @override
+  void operator []=(String key, String value) {
+    final lower = key.toLowerCase();
+    final existing = _keys[lower];
+    if (existing != null) {
+      _inner.remove(existing);
+    }
+    _keys[lower] = key;
+    _inner[key] = value;
+  }
+
+  @override
+  void clear() {
+    _inner.clear();
+    _keys.clear();
+  }
+
+  @override
+  Iterable<String> get keys => _inner.keys;
+
+  @override
+  String? remove(Object? key) {
+    if (key is! String) return null;
+    final lower = key.toLowerCase();
+    final realKey = _keys.remove(lower);
+    return realKey != null ? _inner.remove(realKey) : null;
+  }
+
+  @override
+  bool containsKey(Object? key) {
+    if (key is! String) return false;
+    return _keys.containsKey(key.toLowerCase());
+  }
+}
 
 /// In-memory response returned by [EndveinTestClient].
 class TestResponse {
   final int statusCode;
   final Map<String, String> headers;
   final Uint8List? bodyBytes;
+  final List<SseEvent> sseEvents;
 
-  const TestResponse({
+  TestResponse({
     required this.statusCode,
-    required this.headers,
+    required Map<String, String> headers,
     this.bodyBytes,
-  });
+    this.sseEvents = const [],
+  }) : headers = _CaseInsensitiveMap(headers);
 
   String get bodyText => bodyBytes != null ? utf8.decode(bodyBytes!) : '';
 
@@ -74,11 +130,14 @@ class TestContext implements EndveinContext {
         _body = body,
         store = store ?? {};
 
+  final List<SseEvent> _sseEvents = [];
+
   TestResponse toResponse() {
     return TestResponse(
       statusCode: _statusCode,
       headers: _responseHeaders,
       bodyBytes: _responseBytes,
+      sseEvents: List.unmodifiable(_sseEvents),
     );
   }
 
@@ -156,6 +215,44 @@ class TestContext implements EndveinContext {
     _responseHeaders.addAll(response.headers);
     _responseBytes = response.bodyBytes;
   }
+
+  @override
+  Future<void> sse(Future<void> Function(SseSender sender) streamHandler) async {
+    if (_responded) return;
+    _responded = true;
+    _statusCode = 200;
+    _responseHeaders['content-type'] = 'text/event-stream; charset=utf-8';
+    _responseHeaders['cache-control'] = 'no-cache';
+
+    final builder = BytesBuilder();
+    final sender = _TestSseSender(_sseEvents, builder);
+    try {
+      await streamHandler(sender);
+    } finally {
+      _responseBytes = builder.takeBytes();
+    }
+  }
+}
+
+class _TestSseSender implements SseSender {
+  final List<SseEvent> events;
+  final BytesBuilder builder;
+
+  _TestSseSender(this.events, this.builder);
+
+  @override
+  void send(SseEvent event) {
+    events.add(event);
+    builder.add(event.toBytes());
+  }
+
+  @override
+  void sendData(String data, {String? event, String? id}) {
+    send(SseEvent(data: data, event: event, id: id));
+  }
+
+  @override
+  Future<void> close() async {}
 }
 
 /// In-memory HTTP test client for Endvein routers.
@@ -228,6 +325,8 @@ class EndveinTestClient {
     Map<String, String>? headers,
     Map<String, String>? queryParameters,
     Object? body,
+    Uint8List? rawBody,
+    String? textBody,
   }) =>
       request(
         HttpMethod.post,
@@ -235,6 +334,8 @@ class EndveinTestClient {
         headers: headers,
         queryParameters: queryParameters,
         jsonBody: body,
+        rawBody: rawBody,
+        textBody: textBody,
       );
 
   Future<TestResponse> put(
@@ -242,6 +343,8 @@ class EndveinTestClient {
     Map<String, String>? headers,
     Map<String, String>? queryParameters,
     Object? body,
+    Uint8List? rawBody,
+    String? textBody,
   }) =>
       request(
         HttpMethod.put,
@@ -249,6 +352,8 @@ class EndveinTestClient {
         headers: headers,
         queryParameters: queryParameters,
         jsonBody: body,
+        rawBody: rawBody,
+        textBody: textBody,
       );
 
   Future<TestResponse> delete(
@@ -268,6 +373,8 @@ class EndveinTestClient {
     Map<String, String>? headers,
     Map<String, String>? queryParameters,
     Object? body,
+    Uint8List? rawBody,
+    String? textBody,
   }) =>
       request(
         HttpMethod.patch,
@@ -275,6 +382,8 @@ class EndveinTestClient {
         headers: headers,
         queryParameters: queryParameters,
         jsonBody: body,
+        rawBody: rawBody,
+        textBody: textBody,
       );
 
   Future<TestResponse> options(

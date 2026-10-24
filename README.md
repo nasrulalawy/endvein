@@ -55,7 +55,7 @@ Add Endvein to your `pubspec.yaml`:
 
 ```yaml
 dependencies:
-  endvein: ^0.1.0
+  endvein: ^0.2.0
 ```
 
 Or run:
@@ -334,21 +334,127 @@ void main() {
 
 ---
 
+### 9. Radix Tree (Trie) Routing & Wildcards
+
+Endvein combines **$O(1)$ Hash Map Fast-Path** for static endpoints with a **Radix Tree (Trie)** for parameterized and wildcard routes:
+
+```dart
+// Named parameter matching (:id)
+router.get('/users/:id', (ctx) => 'User ${ctx.param('id')}');
+
+// Deep wildcard / catch-all matching (*filepath)
+router.get('/static/*filepath', (ctx) {
+  final path = ctx.param('filepath'); // e.g. "css/themes/dark.css"
+  return {'asset': path};
+});
+```
+
+---
+
+### 10. Rate Limiting Middleware
+
+Protect your APIs from brute-force attacks and scraping with an in-memory sliding window rate limiter:
+
+```dart
+router.use(rateLimiter(
+  maxRequests: 100,                      // 100 requests
+  window: const Duration(minutes: 1),    // per 1 minute per IP
+  message: 'Too many requests, slow down.',
+));
+```
+
+Automatically attaches `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, and `Retry-After` headers.
+
+---
+
+### 11. Structured JSON Logging & Distributed Tracing
+
+Track requests with automatic correlation IDs and sub-millisecond precision:
+
+```dart
+// Dual mode: CLI colorized for development, or Structured JSON for production
+router.use(logger(jsonFormat: true));
+
+// Output:
+// {"level":"info","timestamp":"2026-10-24T14:30:00Z","requestId":"req-abc-123","method":"GET","path":"/users","statusCode":200,"latencyMs":0.45}
+```
+
+---
+
+### 12. Multipart/Form-Data & File Uploads
+
+Upload files and form fields without external libraries:
+
+```dart
+router.post('/upload', (ctx) {
+  final form = ctx.multipart();
+  if (form == null) return {'error': 'Invalid multipart'};
+
+  final avatar = form.file('avatar');
+  print('Uploaded: ${avatar?.filename} (${avatar?.size} bytes)');
+
+  return {
+    'username': form.field('username'),
+    'filename': avatar?.filename,
+  };
+});
+```
+
+---
+
+### 13. Server-Sent Events (SSE) & LLM Token Streaming
+
+Stream live events or AI/LLM tokens to clients using standard W3C `EventSource`:
+
+```dart
+router.get('/ai/chat/stream', (ctx) async {
+  await ctx.sse((sender) async {
+    sender.sendData('Initializing model...', event: 'status');
+
+    for (final token in ['The', ' future', ' of', ' Dart', ' is', ' fast!']) {
+      await Future.delayed(const Duration(milliseconds: 50));
+      sender.send(SseEvent(event: 'token', data: token));
+    }
+
+    sender.sendData('Done', event: 'finish');
+  });
+});
+```
+
+---
+
+### 14. Prometheus Metrics Exporter (`/metrics`)
+
+Expose real-time throughput and latency metrics for Prometheus and Grafana:
+
+```dart
+final prom = PrometheusMetrics();
+router.use(prom.middleware());
+
+// Expose standard Prometheus exposition endpoint
+router.get('/metrics', prom.handler);
+```
+
+---
+
 ## 🗺️ Roadmap
 
 * ✅ Multi-Isolate Cluster Manager with Kernel Socket Sharing (`shared: true`).
-* ✅ O(1) Static Routing & Dynamic Route Resolution.
+* ✅ Zero-Copy HTTP/1.1 Streaming Parser directly on Raw Sockets.
+* ✅ Radix Tree (Trie) Router Engine with Wildcards (`*filepath`) and Parameters (`:id`).
 * ✅ Zero-Allocation Byte Pipeline.
 * ✅ Clean Architecture Contracts (`Result`, `UseCase`, `Controller`).
-* ✅ Zero-Copy HTTP/1.1 Streaming Parser directly on Raw Sockets.
 * ✅ Network Hardening & Anti-DoS (max header/body size & socket idle timeout).
 * ✅ Auto-Healing Worker Supervisor (Isolate crash recovery).
 * ✅ Hierarchical Route Groups & Scoped Middlewares.
 * ✅ Built-in Security Middlewares (CORS & Security Headers).
+* ✅ Rate Limiting & Anti-Spam Middleware.
+* ✅ Structured JSON Logging & Distributed Tracing (`X-Request-Id`).
+* ✅ Zero-Dependency Multipart/Form-Data & File Upload Parser.
+* ✅ Server-Sent Events (SSE) & AI Token Streaming.
+* ✅ Prometheus Metrics Exporter (`/metrics`).
 * ✅ In-Memory Fast Testing Harness (`EndveinTestClient`).
 * ⏳ Isolated DB Pool Adapter (PostgreSQL / SQLite via FFI).
-* ⏳ Radix Tree Trie Router.
-* ⏳ OpenTelemetry & Prometheus Exporter (`/metrics`).
 * ⏳ Endvein Scaffolding CLI (`endvein new`, `endvein make:controller`).
 
 ---
@@ -356,3 +462,4 @@ void main() {
 ## 📄 License
 
 MIT License © 2026 Endvein Team & M Nasrul Alawy.
+
