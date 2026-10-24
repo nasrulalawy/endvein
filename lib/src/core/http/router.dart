@@ -298,11 +298,20 @@ class EndveinRouter {
 
   String _normalizePath(String path) {
     if (path.isEmpty || path == '/') return '/';
-    final trimmed = path.trim();
-    if (!trimmed.startsWith('/')) return '/$trimmed';
-    if (trimmed.endsWith('/') && trimmed.length > 1) {
-      return trimmed.substring(0, trimmed.length - 1);
+    var p = path.trim();
+    if (p.contains('\x00')) return '/';
+    p = p.replaceAll(RegExp(r'/+'), '/');
+
+    final segments = p.split('/');
+    final resolved = <String>[];
+    for (final seg in segments) {
+      if (seg == '..' || seg == '%2e%2e' || seg == '%2E%2E') {
+        if (resolved.isNotEmpty) resolved.removeLast();
+      } else if (seg.isNotEmpty && seg != '.' && seg != '%2e' && seg != '%2E') {
+        resolved.add(seg);
+      }
     }
-    return trimmed;
+    final normalized = '/${resolved.join('/')}';
+    return normalized.isEmpty ? '/' : normalized;
   }
 }

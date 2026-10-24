@@ -18,10 +18,15 @@ class RawHttpServer {
   final Duration? idleTimeout;
   StreamSubscription<Socket>? _sub;
 
+  final int port;
+  final InternetAddress address;
+
   RawHttpServer._(
     this._socketStream,
     this._onClose,
     this._router, {
+    required this.port,
+    required this.address,
     this.maxHeaderSize = 16 * 1024,
     this.maxBodySize = 10 * 1024 * 1024,
     this.idleTimeout = const Duration(seconds: 30),
@@ -48,6 +53,8 @@ class RawHttpServer {
       serverSocket,
       serverSocket.close,
       router,
+      port: serverSocket.port,
+      address: serverSocket.address,
       maxHeaderSize: maxHeaderSize,
       maxBodySize: maxBodySize,
       idleTimeout: idleTimeout,
@@ -80,6 +87,8 @@ class RawHttpServer {
       secureSocket,
       secureSocket.close,
       router,
+      port: secureSocket.port,
+      address: secureSocket.address,
       maxHeaderSize: maxHeaderSize,
       maxBodySize: maxBodySize,
       idleTimeout: idleTimeout,
@@ -173,10 +182,10 @@ class RawHttpServer {
     });
   }
 
-  void _sendErrorAndClose(Socket client, int statusCode, String message) {
+  void _sendErrorAndClose(Socket client, int statusCode, String message) async {
     try {
       final statusLine = HttpConstants.getStatusLine(statusCode);
-      final body = ascii.encode('{"error":"$message"}');
+      final body = utf8.encode('{"error":"$message"}');
       final headerStr = 'Server: Endvein\r\n'
           'Content-Type: application/json; charset=utf-8\r\n'
           'Content-Length: ${body.length}\r\n'
@@ -187,8 +196,10 @@ class RawHttpServer {
         ..add(headerBytes)
         ..add(body);
       client.add(builder.takeBytes());
-      client.close();
-    } catch (_) {
+      await client.flush();
+      await client.close();
+    } catch (err, st) {
+      stderr.writeln('Error in _sendErrorAndClose: $err\n$st');
       client.destroy();
     }
   }

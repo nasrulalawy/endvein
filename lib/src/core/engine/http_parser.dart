@@ -76,6 +76,13 @@ class ZeroCopyHttpParser {
       return null; // Incomplete headers, wait for more data
     }
 
+    if (headerEnd > maxHeaderSize) {
+      throw const HttpParserException(
+        431,
+        'Request Header Fields Too Large',
+      );
+    }
+
     // 2. Direct byte-scanning of Request Line & Headers (Zero string splits)
     HttpMethod method = HttpMethod.get;
     int pathStart = 4;
@@ -94,15 +101,24 @@ class ZeroCopyHttpParser {
       pathStart = 7;
     } else {
       int spaceIdx = -1;
-      for (var i = 0; i < 10 && i < headerEnd; i++) {
+      for (var i = 0; i < 16 && i < headerEnd; i++) {
         if (_buffer[i] == 32) {
           spaceIdx = i;
           break;
         }
       }
-      if (spaceIdx == -1) return null;
+      if (spaceIdx == -1) {
+        throw const HttpParserException(
+          400,
+          'Bad Request: Invalid or unsupported HTTP method',
+        );
+      }
       final mStr = ascii.decode(Uint8List.sublistView(_buffer, 0, spaceIdx));
-      method = HttpMethod.fromString(mStr) ?? HttpMethod.get;
+      final parsed = HttpMethod.fromString(mStr);
+      if (parsed == null) {
+        throw const HttpParserException(400, 'Bad Request: Unknown HTTP method');
+      }
+      method = parsed;
       pathStart = spaceIdx + 1;
     }
 
@@ -111,6 +127,12 @@ class ZeroCopyHttpParser {
     int questionIdx = -1;
     for (var i = pathStart; i < headerEnd; i++) {
       final b = _buffer[i];
+      if (b == 0 || (b < 32 && b != 9) || b == 127) {
+        throw const HttpParserException(
+          400,
+          'Bad Request: Invalid control character or null byte in path',
+        );
+      }
       if (b == 32) {
         pathEnd = i;
         break;
@@ -118,7 +140,12 @@ class ZeroCopyHttpParser {
         questionIdx = i;
       }
     }
-    if (pathEnd == -1) return null;
+    if (pathEnd == -1) {
+      throw const HttpParserException(
+        400,
+        'Bad Request: Missing HTTP version in request line',
+      );
+    }
 
     final targetEnd = questionIdx != -1 ? questionIdx : pathEnd;
     final pathLen = targetEnd - pathStart;
@@ -179,8 +206,9 @@ class ZeroCopyHttpParser {
     if (lineStart == -1) return null;
 
     final headerStart = lineStart;
-    var contentLength = 0;
+    int? parsedContentLength;
     var keepAlive = true;
+    var hasTransferEncoding = false;
 
     while (lineStart < headerEnd) {
       int nextCrlf = -1;
@@ -201,19 +229,57 @@ class ZeroCopyHttpParser {
         final keyLen = colonIdx - lineStart;
         final firstByte = _buffer[lineStart];
 
+        // Check for Transfer-Encoding (17 chars)
+        if ((firstByte == 116 || firstByte == 84) && keyLen == 17) {
+          final keyBytes = Uint8List.sublistView(_buffer, lineStart, colonIdx);
+          final keyStr = ascii.decode(keyBytes).toLowerCase();
+          if (keyStr == 'transfer-encoding') {
+            hasTransferEncoding = true;
+            if (parsedContentLength != null) {
+              throw const HttpParserException(
+                400,
+                'Bad Request: Both Transfer-Encoding and Content-Length present (RFC 7230 §3.3.3)',
+              );
+            }
+          }
+        }
+
         // Fast parsing of 'content-length' and 'connection'
         if (firstByte == 99 || firstByte == 67) {
           if (keyLen == 14) {
-            var val = 0;
-            for (var j = colonIdx + 1; j < nextCrlf; j++) {
-              final b = _buffer[j];
-              if (b >= 48 && b <= 57) {
-                val = val * 10 + (b - 48);
+            final keyBytes = Uint8List.sublistView(_buffer, lineStart, colonIdx);
+            final keyStr = ascii.decode(keyBytes).toLowerCase();
+            if (keyStr == 'content-length') {
+              if (hasTransferEncoding) {
+                throw const HttpParserException(
+                  400,
+                  'Bad Request: Both Transfer-Encoding and Content-Length present (RFC 7230 §3.3.3)',
+                );
               }
-            }
-            contentLength = val;
-            if (contentLength > maxBodySize) {
-              throw const HttpParserException(413, 'Payload Too Large');
+              var val = 0;
+              var digitsFound = false;
+              for (var j = colonIdx + 1; j < nextCrlf; j++) {
+                final b = _buffer[j];
+                if (b >= 48 && b <= 57) {
+                  val = val * 10 + (b - 48);
+                  digitsFound = true;
+                } else if (digitsFound && b != 32 && b != 9) {
+                  throw const HttpParserException(
+                    400,
+                    'Bad Request: Malformed Content-Length header',
+                  );
+                }
+              }
+              if (val > maxBodySize) {
+                throw const HttpParserException(413, 'Payload Too Large');
+              }
+              if (parsedContentLength != null && parsedContentLength != val) {
+                throw const HttpParserException(
+                  400,
+                  'Bad Request: Multiple Conflicting Content-Length Headers (RFC 7230 §3.3.2)',
+                );
+              }
+              parsedContentLength = val;
             }
           } else if (keyLen == 10) {
             for (var j = colonIdx + 1; j <= nextCrlf - 5; j++) {
@@ -232,6 +298,15 @@ class ZeroCopyHttpParser {
 
       lineStart = nextCrlf + 2;
     }
+
+    if (hasTransferEncoding && parsedContentLength == null) {
+      throw const HttpParserException(
+        501,
+        'Not Implemented: Chunked Transfer-Encoding is not supported',
+      );
+    }
+
+    final contentLength = parsedContentLength ?? 0;
 
     final bodyStart = headerEnd + 4;
     final totalRequired = bodyStart + contentLength;

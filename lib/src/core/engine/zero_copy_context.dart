@@ -52,6 +52,11 @@ class ZeroCopyContext implements EndveinContext {
 
   @override
   void setHeader(String name, String value) {
+    if (name.contains('\r') || name.contains('\n') || value.contains('\r') || value.contains('\n')) {
+      throw ArgumentError(
+        'Header name and value must not contain CRLF characters.',
+      );
+    }
     responseHeaders[name] = value;
   }
 
