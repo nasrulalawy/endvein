@@ -29,16 +29,16 @@ Tested on identical hardware under **50,000 requests** with **concurrency 100** 
 * **Tool:** ApacheBench (`ab -n 50000 -c 100 -k`)
 * **Compilation Mode:** Full Release Production Binaries (`cargo build --release` vs `go build` vs `dart compile exe`)
 
-| Framework / Language | Architecture & Engine | Throughput (RPS) | Mean Latency | Status |
-| :--- | :--- | :---: | :---: | :---: |
-| **⚡ Endvein Turbo FFI** (Dart) | **C kqueue + FFI + Scatter-Gather writev** | **237,184 req/s** 🏆 | **0.422 ms** ⚡ | **#1 TELAK MEMIMPIN** |
-| **Axum** (Rust 1.99) | Tokio + Hyper + NEON SIMD | 219,435 req/s | 0.456 ms | Kalah (-17,749 req/s) |
-| **Actix-web** (Rust 1.99) | Actix Actor Engine + Mio | 209,293 req/s | 0.478 ms | Kalah (-27,891 req/s) |
-| **FastHTTP** (Go 1.25) | Valyala Workerpool (Goroutines) | 187,272 req/s | 0.534 ms | Kalah (-49,912 req/s) |
-| **Endvein RawSocket** (Pure Dart) | Dart Zero-Copy Streaming Engine | 170,043 req/s | 0.588 ms | Mengalahkan Gin & Echo |
-| **Gin** (Go) | `net/http` + Goroutines | 174,110 req/s | 0.574 ms | Kalah |
-| **Echo** (Go) | `net/http` + Goroutines | 159,604 req/s | 0.626 ms | Kalah |
-| **Traditional Dart (Shelf/Single)** | Single Isolate Event Loop | ~42,152 req/s | 2.372 ms | Kalah |
+| Framework / Language | Architecture & Engine | Throughput (RPS) | Mean Latency |
+| :--- | :--- | :---: | :---: |
+| **⚡ Endvein Turbo FFI** (Dart) | **C kqueue + FFI + Scatter-Gather writev** | **237,184 req/s** | **0.422 ms** |
+| **Axum** (Rust 1.99) | Tokio + Hyper + NEON SIMD | 219,435 req/s | 0.456 ms |
+| **Actix-web** (Rust 1.99) | Actix Actor Engine + Mio | 209,293 req/s | 0.478 ms |
+| **FastHTTP** (Go 1.25) | Valyala Workerpool (Goroutines) | 187,272 req/s | 0.534 ms |
+| **Endvein RawSocket** (Pure Dart) | Dart Zero-Copy Streaming Engine | 170,043 req/s | 0.588 ms |
+| **Gin** (Go) | `net/http` + Goroutines | 174,110 req/s | 0.574 ms |
+| **Echo** (Go) | `net/http` + Goroutines | 159,604 req/s | 0.626 ms |
+| **Traditional Dart (Shelf/Single)** | Single Isolate Event Loop | ~42,152 req/s | 2.372 ms |
 
 > **🔥 Hasil:**  
 > **Endvein Turbo FFI mengalahkan Rust Axum secara telak sebesar +17,749 req/s** dengan latensi tercepat **0.422 ms**!  
