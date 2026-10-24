@@ -12,16 +12,24 @@ import 'raw_request.dart';
 /// Ultra-high-performance context for Raw TCP Sockets.
 class ZeroCopyContext implements EndveinContext {
   final Socket socket;
-  final RawHttpRequest rawReq;
+  RawHttpRequest rawReq;
+
+  Map<String, String>? _params;
+  Map<String, Object?>? _store;
+  Map<String, String>? _responseHeaders;
 
   @override
-  final Map<String, String> params;
+  Map<String, String> get params => _params ??= <String, String>{};
 
   @override
-  final Map<String, Object?> store;
+  Map<String, Object?> get store => _store ??= <String, Object?>{};
 
   @override
-  final Map<String, String> responseHeaders = {};
+  Map<String, String> get responseHeaders =>
+      _responseHeaders ??= <String, String>{};
+
+  bool get hasResponseHeaders =>
+      _responseHeaders != null && _responseHeaders!.isNotEmpty;
 
   bool _responded = false;
 
@@ -30,8 +38,17 @@ class ZeroCopyContext implements EndveinContext {
     this.rawReq, {
     Map<String, String>? params,
     Map<String, Object?>? store,
-  })  : params = params ?? <String, String>{},
-        store = store ?? <String, Object?>{};
+  })  : _params = params,
+        _store = store;
+
+  /// Resets context state for the next request on the same Keep-Alive connection.
+  void reset(RawHttpRequest newReq) {
+    rawReq = newReq;
+    _params = null;
+    _store = null;
+    _responseHeaders = null;
+    _responded = false;
+  }
 
   @override
   void setHeader(String name, String value) {
@@ -75,6 +92,16 @@ class ZeroCopyContext implements EndveinContext {
         ? Uint8List(0)
         : Uint8List.fromList(utf8.encode(jsonEncode(data)));
 
+    if (!hasResponseHeaders && statusCode == 200) {
+      _writeFastResponse(
+        rawReq.keepAlive
+            ? HttpConstants.json200KeepAlivePrefix
+            : HttpConstants.json200ClosePrefix,
+        bodyBytes,
+      );
+      return;
+    }
+
     _writeResponse(
       statusCode: statusCode,
       contentType: 'application/json; charset=utf-8',
@@ -88,6 +115,17 @@ class ZeroCopyContext implements EndveinContext {
     _responded = true;
 
     final bodyBytes = Uint8List.fromList(utf8.encode(message));
+
+    if (!hasResponseHeaders && statusCode == 200) {
+      _writeFastResponse(
+        rawReq.keepAlive
+            ? HttpConstants.text200KeepAlivePrefix
+            : HttpConstants.text200ClosePrefix,
+        bodyBytes,
+      );
+      return;
+    }
+
     _writeResponse(
       statusCode: statusCode,
       contentType: 'text/plain; charset=utf-8',
@@ -103,6 +141,28 @@ class ZeroCopyContext implements EndveinContext {
   }) {
     if (_responded) return;
     _responded = true;
+
+    if (!hasResponseHeaders && statusCode == 200) {
+      if (contentType == 'application/json; charset=utf-8' ||
+          contentType == 'application/json') {
+        _writeFastResponse(
+          rawReq.keepAlive
+              ? HttpConstants.json200KeepAlivePrefix
+              : HttpConstants.json200ClosePrefix,
+          data,
+        );
+        return;
+      } else if (contentType == 'text/plain; charset=utf-8' ||
+          contentType == 'text/plain') {
+        _writeFastResponse(
+          rawReq.keepAlive
+              ? HttpConstants.text200KeepAlivePrefix
+              : HttpConstants.text200ClosePrefix,
+          data,
+        );
+        return;
+      }
+    }
 
     _writeResponse(
       statusCode: statusCode,
@@ -126,7 +186,7 @@ class ZeroCopyContext implements EndveinContext {
       rawReq.keepAlive ? 'Connection: keep-alive\r\n' : 'Connection: close\r\n',
     );
 
-    responseHeaders.forEach((key, val) {
+    _responseHeaders?.forEach((key, val) {
       headerBuffer.write('$key: $val\r\n');
     });
     response.headers.forEach((key, val) {
@@ -135,15 +195,38 @@ class ZeroCopyContext implements EndveinContext {
     headerBuffer.write('\r\n');
 
     final headerBytes = ascii.encode(headerBuffer.toString());
-    final builder = BytesBuilder(copy: false)
-      ..add(statusLine)
-      ..add(headerBytes);
-
-    if (response.bodyBytes != null) {
-      builder.add(response.bodyBytes!);
+    final bodyBytes = response.bodyBytes;
+    final totalLen = statusLine.length + headerBytes.length + (bodyBytes?.length ?? 0);
+    final out = Uint8List(totalLen);
+    out.setRange(0, statusLine.length, statusLine);
+    out.setRange(statusLine.length, statusLine.length + headerBytes.length, headerBytes);
+    if (bodyBytes != null && bodyBytes.isNotEmpty) {
+      out.setRange(statusLine.length + headerBytes.length, totalLen, bodyBytes);
     }
 
-    socket.add(builder.takeBytes());
+    socket.add(out);
+
+    if (!rawReq.keepAlive) {
+      socket.close();
+    }
+  }
+
+  void _writeFastResponse(Uint8List prefix, Uint8List bodyBytes) {
+    final len = bodyBytes.length;
+    final cl = len < 1024
+        ? HttpConstants.contentLengthCache[len]
+        : ascii.encode('Content-Length: $len\r\n\r\n');
+
+    final totalLen = prefix.length + cl.length + len;
+    final out = Uint8List(totalLen);
+
+    out.setRange(0, prefix.length, prefix);
+    out.setRange(prefix.length, prefix.length + cl.length, cl);
+    if (len > 0) {
+      out.setRange(prefix.length + cl.length, totalLen, bodyBytes);
+    }
+
+    socket.add(out);
 
     if (!rawReq.keepAlive) {
       socket.close();
@@ -165,18 +248,21 @@ class ZeroCopyContext implements EndveinContext {
     headerBuffer.write('Content-Length: ${bodyBytes.length}\r\n');
     headerBuffer.write(connHeader);
 
-    responseHeaders.forEach((key, val) {
+    _responseHeaders?.forEach((key, val) {
       headerBuffer.write('$key: $val\r\n');
     });
     headerBuffer.write('\r\n');
 
     final headerBytes = ascii.encode(headerBuffer.toString());
-    final builder = BytesBuilder(copy: false)
-      ..add(statusLine)
-      ..add(headerBytes)
-      ..add(bodyBytes);
+    final totalLen = statusLine.length + headerBytes.length + bodyBytes.length;
+    final out = Uint8List(totalLen);
+    out.setRange(0, statusLine.length, statusLine);
+    out.setRange(statusLine.length, statusLine.length + headerBytes.length, headerBytes);
+    if (bodyBytes.isNotEmpty) {
+      out.setRange(statusLine.length + headerBytes.length, totalLen, bodyBytes);
+    }
 
-    socket.add(builder.takeBytes());
+    socket.add(out);
 
     if (!rawReq.keepAlive) {
       socket.close();

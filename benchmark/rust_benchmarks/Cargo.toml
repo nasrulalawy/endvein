@@ -1,0 +1,17 @@
+[package]
+name = "rust_benchmarks"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+actix-web = "4"
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+
+[[bin]]
+name = "actix_bin"
+path = "src/bin/actix_server.rs"
+
+[[bin]]
+name = "axum_bin"
+path = "src/bin/axum_server.rs"

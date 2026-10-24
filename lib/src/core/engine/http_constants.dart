@@ -37,6 +37,42 @@ abstract final class HttpConstants {
   static final Uint8List keepAliveHeader = ascii.encode('Connection: keep-alive\r\n');
   static final Uint8List closeHeader = ascii.encode('Connection: close\r\n');
 
+  // Pre-baked Fast-Path Prefixes
+  static final Uint8List json200KeepAlivePrefix = ascii.encode(
+    'HTTP/1.1 200 OK\r\n'
+    'Server: Endvein\r\n'
+    'Content-Type: application/json; charset=utf-8\r\n'
+    'Connection: keep-alive\r\n',
+  );
+
+  static final Uint8List text200KeepAlivePrefix = ascii.encode(
+    'HTTP/1.1 200 OK\r\n'
+    'Server: Endvein\r\n'
+    'Content-Type: text/plain; charset=utf-8\r\n'
+    'Connection: keep-alive\r\n',
+  );
+
+  static final Uint8List json200ClosePrefix = ascii.encode(
+    'HTTP/1.1 200 OK\r\n'
+    'Server: Endvein\r\n'
+    'Content-Type: application/json; charset=utf-8\r\n'
+    'Connection: close\r\n',
+  );
+
+  static final Uint8List text200ClosePrefix = ascii.encode(
+    'HTTP/1.1 200 OK\r\n'
+    'Server: Endvein\r\n'
+    'Content-Type: text/plain; charset=utf-8\r\n'
+    'Connection: close\r\n',
+  );
+
+  /// Pre-computed Content-Length headers including ending \r\n\r\n for lengths 0 to 1023
+  static final List<Uint8List> contentLengthCache = List<Uint8List>.generate(
+    1024,
+    (i) => ascii.encode('Content-Length: $i\r\n\r\n'),
+    growable: false,
+  );
+
   static Uint8List getStatusLine(int statusCode) {
     switch (statusCode) {
       case 200:
@@ -68,3 +104,4 @@ abstract final class HttpConstants {
     }
   }
 }
+

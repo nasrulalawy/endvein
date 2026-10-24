@@ -7,7 +7,11 @@ doc/api/
 
 # Compiled native binaries & benchmarks
 benchmark/*_bin
+benchmark/**/*_bin
 benchmark/worker_test
+benchmark/go_bin
+benchmark/rust_benchmarks/target/
+endvein.jpeg
 *.exe
 *.o
 *.a

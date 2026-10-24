@@ -158,8 +158,9 @@ class TestContext implements EndveinContext {
 
   @override
   Future<String> bodyText() async {
-    if (_body == null || _body!.isEmpty) return '';
-    return utf8.decode(_body!);
+    final body = _body;
+    if (body == null || body.isEmpty) return '';
+    return utf8.decode(body);
   }
 
   @override

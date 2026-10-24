@@ -1,0 +1,23 @@
+# Pub package ignore file
+# Exclude local benchmarking artifacts and environments from package tarball
+benchmark/
+build/
+doc/
+.dart_tool/
+.packages
+pubspec.lock
+endvein.jpeg
+
+# Native binaries (only C source is bundled, binaries must be compiled locally)
+native/*.dylib
+native/*.so
+*.dylib
+*.so
+*.o
+*.a
+*.exe
+
+# macOS & IDE
+.DS_Store
+.idea/
+.vscode/

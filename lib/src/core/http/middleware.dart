@@ -20,10 +20,16 @@ class MiddlewarePipeline {
     _middlewares.add(middleware);
   }
 
+  bool get hasMiddlewares => _middlewares.isNotEmpty;
+
   FutureOr<EndveinResponse?> execute(
     EndveinContext ctx,
     FutureOr<EndveinResponse?> Function() finalHandler,
   ) {
+    if (_middlewares.isEmpty) {
+      return finalHandler();
+    }
+
     int index = -1;
 
     FutureOr<EndveinResponse?> dispatch(int i) {

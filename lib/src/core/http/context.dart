@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'headers.dart';
 import 'http_method.dart';
 import 'response.dart';
 import 'sse.dart';
@@ -254,5 +255,33 @@ extension ContextParamQueryX on EndveinContext {
   /// Get query parameter as a String.
   String queryString(String name, {String defaultValue = ''}) {
     return queryParameters[name] ?? defaultValue;
+  }
+}
+
+/// Zero-cost typed HTTP header and status helpers for [EndveinContext].
+extension ContextTypedHeadersX on EndveinContext {
+  /// Get request header value using compile-time safe [HeaderName].
+  String? header(HeaderName name) => getHeader(name.name);
+
+  /// Set response header using compile-time safe [HeaderName].
+  void setHeaderName(HeaderName name, String value) => setHeader(name.name, value);
+
+  /// Send JSON response with compile-time safe [StatusCode].
+  void sendJson(Object? data, {StatusCode statusCode = StatusCode.ok}) {
+    this.json(data, statusCode: statusCode.code);
+  }
+
+  /// Send text response with compile-time safe [StatusCode].
+  void sendText(String message, {StatusCode statusCode = StatusCode.ok}) {
+    text(message, statusCode: statusCode.code);
+  }
+
+  /// Send byte response with compile-time safe [MediaType] and [StatusCode].
+  void sendBytes(
+    Uint8List data, {
+    MediaType contentType = MediaType.octetStream,
+    StatusCode statusCode = StatusCode.ok,
+  }) {
+    bytes(data, contentType: contentType.value, statusCode: statusCode.code);
   }
 }

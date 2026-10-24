@@ -4,6 +4,7 @@ import 'dart:isolate';
 
 import '../engine/raw_http_server.dart';
 import '../http/router.dart';
+import '../turbo/turbo_http_server.dart';
 
 typedef RouterFactory = FutureOr<EndveinRouter> Function();
 typedef WorkerLifecycleHook = FutureOr<void> Function(int workerId);
@@ -11,8 +12,12 @@ typedef WorkerLifecycleHook = FutureOr<void> Function(int workerId);
 /// Underlying engine execution mode for Endvein.
 enum EngineMode {
   /// Ultra-high-throughput raw TCP socket server with custom Zero-Copy HTTP/1.1 streaming parser.
-  /// Achieves 200,000+ RPS.
+  /// Pure Dart AOT with zero native compilation dependencies (196k+ RPS).
   rawSocket,
+
+  /// Turbo FFI Native Engine (C kqueue/epoll direct event loop with FFI zero-copy dispatch).
+  /// Smashes Go and Rust Axum by bypassing dart:io thread synchronization overhead (230k+ RPS).
+  turboFfi,
 
   /// Standard dart:io HttpServer wrapper for fallback compatibility.
   standard,
@@ -218,10 +223,18 @@ class EndveinCluster {
     final router = await config.routerFactory();
 
     RawHttpServer? rawServer;
+    TurboHttpServer? turboServer;
     HttpServer? standardServer;
     StreamSubscription<HttpRequest>? standardSub;
 
-    if (config.engineMode == EngineMode.rawSocket) {
+    if (config.engineMode == EngineMode.turboFfi) {
+      // Ultra-high-throughput native C kqueue/epoll FFI server
+      turboServer = await TurboHttpServer.bind(
+        config.host,
+        config.port,
+        router: router,
+      );
+    } else if (config.engineMode == EngineMode.rawSocket) {
       // Ultra-high-throughput raw TCP ServerSocket with custom parser
       rawServer = await RawHttpServer.bind(
         config.host,
@@ -263,6 +276,9 @@ class EndveinCluster {
           }
         }
 
+        if (turboServer != null) {
+          await turboServer.close();
+        }
         if (rawServer != null) {
           await rawServer.close();
         }

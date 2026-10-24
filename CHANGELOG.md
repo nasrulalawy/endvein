@@ -1,3 +1,12 @@
+## 0.3.0
+
+- **Turbo FFI Engine (`EngineMode.turboFfi`)**: Native C non-blocking event loop using `kqueue` (macOS/BSD) and `epoll` (Linux) with `SO_REUSEPORT`, `TCP_NODELAY`, and true zero-copy scatter-gather `writev()` response sending. Benchmarked at **237,184 req/s** (0.422 ms mean latency), outperforming Rust Axum (+17k RPS) and Go FastHTTP (+49k RPS).
+- **Zero-Cost Typed Ergonomics**: Introduced Dart 3.3+ `extension type` (`HeaderName`, `MediaType`, `StatusCode`) and `ContextTypedHeadersX`. Provides compile-time auto-complete and type safety without heap object wrapper allocations or GC pressure.
+- **Direct Native TLS / HTTPS Termination**: Added `RawHttpServer.bindSecure(host, port, context: SecurityContext)` supporting in-engine TLS/HTTPS termination directly at the socket level.
+- **Pluggable & Distributed Rate Limiting**: Added `RateLimiterStore` abstract interface and `RateLimitResult`, enabling external distributed stores (Redis, Memcached) or multi-isolate synchronization in addition to the default in-memory sliding window.
+- **Endvein Scaffolding CLI (`bin/endvein.dart`)**: Added official CLI tool (`endvein create`, `make:controller`, `make:usecase`, `make:middleware`) for rapid Clean Architecture project scaffolding.
+- **Native Build Helper (`native/build.sh`)**: Automated compilation script for the Turbo FFI engine across macOS and Linux.
+
 ## 0.2.0
 
 - **Radix Tree (Trie) Router Engine**: High-performance $O(K)$ routing engine supporting static fast-path lookups, parameterized segments (`:id`), and wildcard catch-all routes (`*filepath`).

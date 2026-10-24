@@ -10,7 +10,8 @@ import 'zero_copy_context.dart';
 
 /// Ultra-high-performance HTTP server directly built on raw TCP ServerSocket.
 class RawHttpServer {
-  final ServerSocket _serverSocket;
+  final Stream<Socket> _socketStream;
+  final Future<void> Function() _onClose;
   final EndveinRouter _router;
   final int maxHeaderSize;
   final int maxBodySize;
@@ -18,7 +19,8 @@ class RawHttpServer {
   StreamSubscription<Socket>? _sub;
 
   RawHttpServer._(
-    this._serverSocket,
+    this._socketStream,
+    this._onClose,
     this._router, {
     this.maxHeaderSize = 16 * 1024,
     this.maxBodySize = 10 * 1024 * 1024,
@@ -30,6 +32,7 @@ class RawHttpServer {
     int port, {
     required EndveinRouter router,
     bool shared = true,
+    int backlog = 2048,
     int maxHeaderSize = 16 * 1024,
     int maxBodySize = 10 * 1024 * 1024,
     Duration? idleTimeout = const Duration(seconds: 30),
@@ -38,10 +41,44 @@ class RawHttpServer {
       host,
       port,
       shared: shared,
+      backlog: backlog,
     );
 
     final server = RawHttpServer._(
       serverSocket,
+      serverSocket.close,
+      router,
+      maxHeaderSize: maxHeaderSize,
+      maxBodySize: maxBodySize,
+      idleTimeout: idleTimeout,
+    );
+    server._listen();
+    return server;
+  }
+
+  /// Bind a high-performance direct HTTPS server using TLS [SecurityContext].
+  static Future<RawHttpServer> bindSecure(
+    dynamic host,
+    int port, {
+    required EndveinRouter router,
+    required SecurityContext context,
+    bool shared = true,
+    int backlog = 2048,
+    int maxHeaderSize = 16 * 1024,
+    int maxBodySize = 10 * 1024 * 1024,
+    Duration? idleTimeout = const Duration(seconds: 30),
+  }) async {
+    final secureSocket = await SecureServerSocket.bind(
+      host,
+      port,
+      context,
+      shared: shared,
+      backlog: backlog,
+    );
+
+    final server = RawHttpServer._(
+      secureSocket,
+      secureSocket.close,
       router,
       maxHeaderSize: maxHeaderSize,
       maxBodySize: maxBodySize,
@@ -52,16 +89,22 @@ class RawHttpServer {
   }
 
   void _listen() {
-    _sub = _serverSocket.listen((Socket client) {
+    _sub = _socketStream.listen((Socket client) {
       // Disable Nagle's algorithm for sub-millisecond latency
       try {
         client.setOption(SocketOption.tcpNoDelay, true);
       } catch (_) {}
 
       Timer? idleTimer;
-      void resetTimer() {
-        if (idleTimeout != null) {
-          idleTimer?.cancel();
+      void cancelIdleTimer() {
+        if (idleTimer != null) {
+          idleTimer!.cancel();
+          idleTimer = null;
+        }
+      }
+
+      void armIdleTimer() {
+        if (idleTimeout != null && idleTimer == null) {
           idleTimer = Timer(idleTimeout!, () {
             try {
               client.destroy();
@@ -70,50 +113,59 @@ class RawHttpServer {
         }
       }
 
-      resetTimer();
+      armIdleTimer();
 
       final parser = ZeroCopyHttpParser(
         maxHeaderSize: maxHeaderSize,
         maxBodySize: maxBodySize,
       );
 
+      ZeroCopyContext? pooledCtx;
+
       StreamSubscription<Uint8List>? clientSub;
       clientSub = client.listen(
         (Uint8List chunk) {
-          resetTimer();
+          cancelIdleTimer();
           try {
             parser.append(chunk);
 
             // Drain all available requests (supports Keep-Alive pipelining)
             while (true) {
               final rawReq = parser.parseNext();
-              if (rawReq == null) break;
+              if (rawReq == null) {
+                armIdleTimer();
+                break;
+              }
 
-              final ctx = ZeroCopyContext(client, rawReq);
-              _router.handleContext(ctx);
+              if (pooledCtx == null) {
+                pooledCtx = ZeroCopyContext(client, rawReq);
+              } else {
+                pooledCtx!.reset(rawReq);
+              }
+              _router.handleContext(pooledCtx!);
 
               if (!rawReq.keepAlive) {
-                idleTimer?.cancel();
+                cancelIdleTimer();
                 clientSub?.cancel();
                 break;
               }
             }
           } on HttpParserException catch (e) {
-            idleTimer?.cancel();
+            cancelIdleTimer();
             clientSub?.cancel();
             _sendErrorAndClose(client, e.statusCode, e.message);
           } catch (_) {
-            idleTimer?.cancel();
+            cancelIdleTimer();
             clientSub?.cancel();
             client.destroy();
           }
         },
         onError: (Object error) {
-          idleTimer?.cancel();
+          cancelIdleTimer();
           client.destroy();
         },
         onDone: () {
-          idleTimer?.cancel();
+          cancelIdleTimer();
           client.destroy();
         },
         cancelOnError: true,
@@ -143,6 +195,6 @@ class RawHttpServer {
 
   Future<void> close() async {
     await _sub?.cancel();
-    await _serverSocket.close();
+    await _onClose();
   }
 }

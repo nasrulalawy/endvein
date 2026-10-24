@@ -23,18 +23,19 @@ class ZeroCopyHttpParser {
   /// Maximum allowed body size in bytes (defaults to 10MB).
   final int maxBodySize;
 
-  Uint8List _buffer = Uint8List(0);
+  Uint8List _buffer;
   int _bufferLength = 0;
 
   ZeroCopyHttpParser({
     this.maxHeaderSize = 16 * 1024,
     this.maxBodySize = 10 * 1024 * 1024,
-  });
+    int initialBufferSize = 4096,
+  }) : _buffer = Uint8List(initialBufferSize);
 
   void append(Uint8List chunk) {
     if (_bufferLength + chunk.length > _buffer.length) {
       final newCapacity = (_buffer.isEmpty)
-          ? chunk.length * 2
+          ? 4096
           : (_bufferLength + chunk.length) * 2;
       final newBuffer = Uint8List(newCapacity);
       if (_bufferLength > 0) {
@@ -75,28 +76,86 @@ class ZeroCopyHttpParser {
       return null; // Incomplete headers, wait for more data
     }
 
-    // 2. Parse Request Line and Headers
-    final headerBytes = Uint8List.sublistView(_buffer, 0, headerEnd);
-    final headerText = ascii.decode(headerBytes);
-    final lines = headerText.split('\r\n');
+    // 2. Direct byte-scanning of Request Line & Headers (Zero string splits)
+    HttpMethod method = HttpMethod.get;
+    int pathStart = 4;
+    final b0 = _buffer[0];
+    if (b0 == 71 && _buffer[1] == 69 && _buffer[2] == 84 && _buffer[3] == 32) {
+      method = HttpMethod.get;
+      pathStart = 4;
+    } else if (b0 == 80 && _buffer[1] == 79 && _buffer[2] == 83 && _buffer[3] == 84 && _buffer[4] == 32) {
+      method = HttpMethod.post;
+      pathStart = 5;
+    } else if (b0 == 80 && _buffer[1] == 85 && _buffer[2] == 84 && _buffer[3] == 32) {
+      method = HttpMethod.put;
+      pathStart = 4;
+    } else if (b0 == 68 && _buffer[1] == 69 && _buffer[2] == 76 && _buffer[3] == 69 && _buffer[4] == 84 && _buffer[5] == 69 && _buffer[6] == 32) {
+      method = HttpMethod.delete;
+      pathStart = 7;
+    } else {
+      int spaceIdx = -1;
+      for (var i = 0; i < 10 && i < headerEnd; i++) {
+        if (_buffer[i] == 32) {
+          spaceIdx = i;
+          break;
+        }
+      }
+      if (spaceIdx == -1) return null;
+      final mStr = ascii.decode(Uint8List.sublistView(_buffer, 0, spaceIdx));
+      method = HttpMethod.fromString(mStr) ?? HttpMethod.get;
+      pathStart = spaceIdx + 1;
+    }
 
-    if (lines.isEmpty) return null;
+    // Locate end of path and optional query delimiter '?'
+    int pathEnd = -1;
+    int questionIdx = -1;
+    for (var i = pathStart; i < headerEnd; i++) {
+      final b = _buffer[i];
+      if (b == 32) {
+        pathEnd = i;
+        break;
+      } else if (b == 63 && questionIdx == -1) {
+        questionIdx = i;
+      }
+    }
+    if (pathEnd == -1) return null;
 
-    final requestLine = lines[0];
-    final parts = requestLine.split(' ');
-    if (parts.length < 2) return null;
+    final targetEnd = questionIdx != -1 ? questionIdx : pathEnd;
+    final pathLen = targetEnd - pathStart;
 
-    final methodStr = parts[0];
-    final target = parts[1];
-    final method = HttpMethod.fromString(methodStr) ?? HttpMethod.get;
+    // Zero-allocation path lookup for standard endpoints
+    String path;
+    if (pathLen == 5 &&
+        _buffer[pathStart] == 47 &&
+        _buffer[pathStart + 1] == 106 &&
+        _buffer[pathStart + 2] == 115 &&
+        _buffer[pathStart + 3] == 111 &&
+        _buffer[pathStart + 4] == 110) {
+      path = '/json';
+    } else if (pathLen == 10 &&
+        _buffer[pathStart] == 47 &&
+        _buffer[pathStart + 1] == 112 &&
+        _buffer[pathStart + 2] == 108 &&
+        _buffer[pathStart + 3] == 97 &&
+        _buffer[pathStart + 4] == 105 &&
+        _buffer[pathStart + 5] == 110 &&
+        _buffer[pathStart + 6] == 116 &&
+        _buffer[pathStart + 7] == 101 &&
+        _buffer[pathStart + 8] == 120 &&
+        _buffer[pathStart + 9] == 116) {
+      path = '/plaintext';
+    } else if (pathLen == 1 && _buffer[pathStart] == 47) {
+      path = '/';
+    } else {
+      path = ascii.decode(Uint8List.sublistView(_buffer, pathStart, targetEnd));
+    }
 
-    // Parse path and query parameters
-    String path = target;
-    final queryParams = <String, String>{};
-    final questionIdx = target.indexOf('?');
+    // Parse query parameters if present
+    Map<String, String>? queryParams;
     if (questionIdx != -1) {
-      path = target.substring(0, questionIdx);
-      final queryString = target.substring(questionIdx + 1);
+      queryParams = <String, String>{};
+      final qBytes = Uint8List.sublistView(_buffer, questionIdx + 1, pathEnd);
+      final queryString = ascii.decode(qBytes);
       final queryPairs = queryString.split('&');
       for (final pair in queryPairs) {
         final eqIdx = pair.indexOf('=');
@@ -109,33 +168,69 @@ class ZeroCopyHttpParser {
       }
     }
 
-    // Parse headers
-    final headers = <String, String>{};
+    // Find end of request line (\r\n)
+    int lineStart = -1;
+    for (var i = pathEnd; i <= headerEnd - 2; i++) {
+      if (_buffer[i] == 13 && _buffer[i + 1] == 10) {
+        lineStart = i + 2;
+        break;
+      }
+    }
+    if (lineStart == -1) return null;
+
+    final headerStart = lineStart;
     var contentLength = 0;
-    var keepAlive = true; // HTTP/1.1 default
+    var keepAlive = true;
 
-    for (var i = 1; i < lines.length; i++) {
-      final line = lines[i];
-      final colonIdx = line.indexOf(':');
-      if (colonIdx != -1) {
-        final key = line.substring(0, colonIdx).trim().toLowerCase();
-        final value = line.substring(colonIdx + 1).trim();
-        headers[key] = value;
+    while (lineStart < headerEnd) {
+      int nextCrlf = -1;
+      int colonIdx = -1;
 
-        if (key == 'content-length') {
-          contentLength = int.tryParse(value) ?? 0;
-          if (contentLength > maxBodySize) {
-            throw const HttpParserException(
-              413,
-              'Payload Too Large',
-            );
-          }
-        } else if (key == 'connection') {
-          if (value.toLowerCase() == 'close') {
-            keepAlive = false;
+      for (var i = lineStart; i <= headerEnd; i++) {
+        if (colonIdx == -1 && _buffer[i] == 58) {
+          colonIdx = i;
+        }
+        if (_buffer[i] == 13 && _buffer[i + 1] == 10) {
+          nextCrlf = i;
+          break;
+        }
+      }
+      if (nextCrlf == -1) break;
+
+      if (colonIdx != -1 && colonIdx < nextCrlf) {
+        final keyLen = colonIdx - lineStart;
+        final firstByte = _buffer[lineStart];
+
+        // Fast parsing of 'content-length' and 'connection'
+        if (firstByte == 99 || firstByte == 67) {
+          if (keyLen == 14) {
+            var val = 0;
+            for (var j = colonIdx + 1; j < nextCrlf; j++) {
+              final b = _buffer[j];
+              if (b >= 48 && b <= 57) {
+                val = val * 10 + (b - 48);
+              }
+            }
+            contentLength = val;
+            if (contentLength > maxBodySize) {
+              throw const HttpParserException(413, 'Payload Too Large');
+            }
+          } else if (keyLen == 10) {
+            for (var j = colonIdx + 1; j <= nextCrlf - 5; j++) {
+              if ((_buffer[j] == 99 || _buffer[j] == 67) &&
+                  (_buffer[j + 1] == 108 || _buffer[j + 1] == 76) &&
+                  (_buffer[j + 2] == 111 || _buffer[j + 2] == 79) &&
+                  (_buffer[j + 3] == 115 || _buffer[j + 3] == 83) &&
+                  (_buffer[j + 4] == 101 || _buffer[j + 4] == 69)) {
+                keepAlive = false;
+                break;
+              }
+            }
           }
         }
       }
+
+      lineStart = nextCrlf + 2;
     }
 
     final bodyStart = headerEnd + 4;
@@ -146,6 +241,14 @@ class ZeroCopyHttpParser {
       return null; // Need more data for full body
     }
 
+    final unconsumedLength = _bufferLength - totalRequired;
+
+    final Uint8List? headerBytes = headerEnd > headerStart
+        ? (unconsumedLength > 0
+            ? Uint8List.fromList(Uint8List.sublistView(_buffer, headerStart, headerEnd))
+            : Uint8List.sublistView(_buffer, headerStart, headerEnd))
+        : null;
+
     Uint8List? body;
     if (contentLength > 0) {
       body = Uint8List.fromList(
@@ -154,13 +257,10 @@ class ZeroCopyHttpParser {
     }
 
     // 4. Compact the buffer for remaining data (pipelined requests)
-    final unconsumedLength = _bufferLength - totalRequired;
     if (unconsumedLength > 0) {
-      _buffer.setRange(
-        0,
-        unconsumedLength,
-        _buffer.sublist(totalRequired, _bufferLength),
-      );
+      for (var i = 0; i < unconsumedLength; i++) {
+        _buffer[i] = _buffer[totalRequired + i];
+      }
       _bufferLength = unconsumedLength;
     } else {
       _bufferLength = 0;
@@ -170,7 +270,7 @@ class ZeroCopyHttpParser {
       method: method,
       path: path,
       queryParameters: queryParams,
-      headers: headers,
+      headerBytes: headerBytes,
       body: body,
       keepAlive: keepAlive,
     );

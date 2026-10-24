@@ -21,26 +21,42 @@ class RouteTarget {
   FutureOr<void> execute(
     EndveinContext ctx,
     void Function(EndveinContext ctx, dynamic result) onResult,
-  ) async {
+  ) {
     if (middlewares.isEmpty) {
-      final result = await handler(ctx);
+      final result = handler(ctx);
+      if (result is Future) {
+        return result.then((res) => onResult(ctx, res));
+      }
       onResult(ctx, result);
-      return;
+      return null;
     }
 
     final pipeline = MiddlewarePipeline();
     for (final m in middlewares) {
       pipeline.use(m);
     }
-    final response = await pipeline.execute(ctx, () async {
-      final result = await handler(ctx);
+    final response = pipeline.execute(ctx, () {
+      final result = handler(ctx);
+      if (result is Future) {
+        return result.then((res) {
+          onResult(ctx, res);
+          return null;
+        });
+      }
       onResult(ctx, result);
       return null;
     });
 
-    if (response != null) {
+    if (response is Future<EndveinResponse?>) {
+      return response.then((res) {
+        if (res != null) {
+          onResult(ctx, res);
+        }
+      });
+    } else if (response != null) {
       onResult(ctx, response);
     }
+    return null;
   }
 }
 
@@ -148,26 +164,57 @@ class EndveinRouter {
   }
 
   /// Handle any [EndveinContext] (e.g. ZeroCopyContext, StandardHttpContext, or TestContext)
-  Future<void> handleContext(EndveinContext ctx) async {
+  FutureOr<void> handleContext(EndveinContext ctx) {
     try {
-      final res = await _pipeline.execute(ctx, () async {
-        return await _dispatch(ctx);
-      });
-      if (res != null && !ctx.isResponded) {
-        _handleResult(ctx, res);
+      if (!_pipeline.hasMiddlewares) {
+        final disp = _dispatch(ctx);
+        if (disp is Future<EndveinResponse?>) {
+          return disp.then((res) {
+            if (res != null && !ctx.isResponded) {
+              _handleResult(ctx, res);
+            }
+          }).catchError((Object e, StackTrace stack) {
+            _handleError(ctx, e, stack);
+          });
+        } else {
+          if (disp != null && !ctx.isResponded) {
+            _handleResult(ctx, disp);
+          }
+          return null;
+        }
+      }
+
+      final res = _pipeline.execute(ctx, () => _dispatch(ctx));
+      if (res is Future<EndveinResponse?>) {
+        return res.then((response) {
+          if (response != null && !ctx.isResponded) {
+            _handleResult(ctx, response);
+          }
+        }).catchError((Object e, StackTrace stack) {
+          _handleError(ctx, e, stack);
+        });
+      } else {
+        if (res != null && !ctx.isResponded) {
+          _handleResult(ctx, res);
+        }
+        return null;
       }
     } catch (e, stack) {
-      if (!ctx.isResponded) {
-        ctx.json({
-          'error': 'Internal Server Error',
-          'message': e.toString(),
-        }, statusCode: HttpStatus.internalServerError);
-      }
-      stderr.writeln('[Endvein Error] $e\n$stack');
+      _handleError(ctx, e, stack);
     }
   }
 
-  FutureOr<EndveinResponse?> _dispatch(EndveinContext ctx) async {
+  void _handleError(EndveinContext ctx, Object e, StackTrace stack) {
+    if (!ctx.isResponded) {
+      ctx.json({
+        'error': 'Internal Server Error',
+        'message': e.toString(),
+      }, statusCode: HttpStatus.internalServerError);
+    }
+    stderr.writeln('[Endvein Error] $e\n$stack');
+  }
+
+  FutureOr<EndveinResponse?> _dispatch(EndveinContext ctx) {
     final method = ctx.method;
     if (method == null) {
       ctx.text('Method Not Allowed', statusCode: HttpStatus.methodNotAllowed);
@@ -177,10 +224,27 @@ class EndveinRouter {
     final path = _normalizePath(ctx.path);
 
     // 1. O(1) Static Route Lookup
-    final staticKey = '${method.value} $path';
+    final String staticKey;
+    if (method == HttpMethod.get) {
+      if (path == '/json') {
+        staticKey = 'GET /json';
+      } else if (path == '/plaintext') {
+        staticKey = 'GET /plaintext';
+      } else if (path == '/') {
+        staticKey = 'GET /';
+      } else {
+        staticKey = 'GET $path';
+      }
+    } else {
+      staticKey = '${method.value} $path';
+    }
+
     final staticTarget = _staticRoutes[staticKey];
     if (staticTarget != null) {
-      await staticTarget.execute(ctx, _handleResult);
+      final res = staticTarget.execute(ctx, _handleResult);
+      if (res is Future) {
+        return res.then((_) => null);
+      }
       return null;
     }
 
@@ -188,7 +252,10 @@ class EndveinRouter {
     final match = _radixTree.search(method, path);
     if (match != null) {
       ctx.params.addAll(match.params);
-      await match.target.execute(ctx, _handleResult);
+      final res = match.target.execute(ctx, _handleResult);
+      if (res is Future) {
+        return res.then((_) => null);
+      }
       return null;
     }
 
