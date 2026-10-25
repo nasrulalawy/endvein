@@ -260,18 +260,30 @@ class ZeroCopyHttpParser {
               var digitsFound = false;
               for (var j = colonIdx + 1; j < nextCrlf; j++) {
                 final b = _buffer[j];
+                if (b == 32 || b == 9) {
+                  if (digitsFound) {
+                    continue; // Trailing OWS is permitted
+                  }
+                  continue; // Leading OWS is permitted
+                }
                 if (b >= 48 && b <= 57) {
                   val = val * 10 + (b - 48);
                   digitsFound = true;
-                } else if (digitsFound && b != 32 && b != 9) {
+                  if (val > maxBodySize || val < 0) {
+                    throw const HttpParserException(413, 'Payload Too Large');
+                  }
+                } else {
                   throw const HttpParserException(
                     400,
                     'Bad Request: Malformed Content-Length header',
                   );
                 }
               }
-              if (val > maxBodySize) {
-                throw const HttpParserException(413, 'Payload Too Large');
+              if (!digitsFound) {
+                throw const HttpParserException(
+                  400,
+                  'Bad Request: Malformed Content-Length header',
+                );
               }
               if (parsedContentLength != null && parsedContentLength != val) {
                 throw const HttpParserException(
