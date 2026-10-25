@@ -1,3 +1,14 @@
+## 0.3.1
+
+- **HTTP Request Smuggling Mitigations (RFC 7230 §3.3.3 / RFC 9112 §6 / CWE-444)**: Prohibits simultaneous `Transfer-Encoding` and `Content-Length` headers, rejecting conflicting requests with HTTP 400.
+- **Dual Conflicting Content-Length Defense (RFC 7230 §3.3.2)**: Strictly validates multiple `Content-Length` headers, rejecting mismatched values to prevent desynchronization attacks.
+- **CRLF Header Injection & Response Splitting Defense (CWE-113)**: Validates header names and values in `ZeroCopyContext.setHeader()`, rejecting newline injection attempts with `ArgumentError`.
+- **Path Traversal & Relative Segment Sanitization (CWE-22)**: Normalizes route paths in `EndveinRouter`, collapsing multiple slashes (`//admin` -> `/admin`) and safely resolving dot segments (`..`, `%2e%2e`, `.`).
+- **Null Byte & Control Character Filtering (CWE-628)**: Rejects null bytes (`\x00`) and ASCII control characters in HTTP request targets with HTTP 400.
+- **Header & Payload Bomb Guards (HTTP 431 / HTTP 413)**: Enforces `maxHeaderSize` and `maxBodySize` across fragmented and completed header/body streams, terminating unbounded requests immediately.
+- **Slowloris DoS Protection**: Configurable socket `idleTimeout` automatically closes slow or idle attacking clients to prevent socket starvation.
+- **Automated Security Penetration Test Suite (`test/security_audit_test.dart`)**: Added 10-vector raw TCP penetration test suite auditing engine resilience.
+
 ## 0.3.0
 
 - **Turbo FFI Engine (`EngineMode.turboFfi`)**: Native C non-blocking event loop using `kqueue` (macOS/BSD) and `epoll` (Linux) with `SO_REUSEPORT`, `TCP_NODELAY`, and true zero-copy scatter-gather `writev()` response sending. Benchmarked at **237,184 req/s** (0.422 ms mean latency), outperforming Rust Axum (+17k RPS) and Go FastHTTP (+49k RPS).
